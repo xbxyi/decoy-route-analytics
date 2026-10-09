@@ -531,7 +531,7 @@ function selectPlayer(id, scroll) {
       </div>
     </div>
     <div class="foot">
-      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Real decoy play:</b> 2 or more coverage defenders within 5 yards of him at the throw, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards, then divided by (1 + teammates inside his 5-yard zone), since defenders there may be covering the teammate. Tracking in this dataset runs from about 0.5 s before the snap to 0.5 s after the throw; the replay pauses on the throw so you can read it, then shows an estimated ball flight to the target (faded and labelled) because the catch itself was not tracked. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
+      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Real decoy play:</b> 2 or more coverage defenders within 5 yards of him at the throw, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards, then divided by (1 + teammates inside his 5-yard zone), since defenders there may be covering the teammate. Tracking in this dataset runs from about 0.5 s before the snap to 0.5 s after the throw; the replay pauses on the throw so you can read it. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
@@ -745,10 +745,9 @@ async function loadPlay(p, q) {
   frames.forEach(f => f.pos.forEach(([x], id) => { if (id) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); } }));
   const los = (frames[0].pos.get(0) || [xmin + 8])[0];
   const decoys = findDecoys(F, frames, keyT, q.target);
-  const t0 = frames[0].t, est = estimateFlight(frames, q.target, F.thrown);
+  const t0 = frames[0].t;
   anim = { raf: 0, t: reduce ? keyT : t0, playing: !reduce, last: 0, held: false, hold: 0,
-           play: { p, q, F, frames, end: end + (est ? est.tau + POST_CATCH : 0), realEnd: end, est, keyT, t0, decoys, x0: Math.floor(Math.min(xmin, est ? Math.min(est.C[0], est.T[0] + est.V[0] * (est.tau + POST_CATCH)) : xmin) - 3),
-           x1: Math.ceil(Math.max(xmax, est ? Math.max(est.C[0], est.T[0] + est.V[0] * (est.tau + POST_CATCH)) : xmax) + 3), los, fd: los + (q.togo || 0) } };
+           play: { p, q, F, frames, end, keyT, t0, decoys, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
   renderDecoys(decoys.filter(x => x.id === p.id), q.target);
   $("#playbtn").textContent = anim.playing ? "Pause" : "Play";
   $("#playbtn").onclick = () => { if (!anim.playing && anim.t >= end) { anim.t = t0; anim.held = false; }
@@ -830,36 +829,7 @@ function tick(ts) {
   draw();
 }
 
-/* Tracking in this dataset stops 0.5 s after the throw, before the ball arrives. After the last real
-   frame we ESTIMATE the rest of the flight: the target keeps his last velocity, the ball flies straight
-   at a typical pass speed and meets him. Everyone else is frozen and faded; the field is labelled. */
-const BALL_SPEED = 18;   // yd/s
-const POST_CATCH = 0.8;  // seconds shown after the ball reaches the target
-function estimateFlight(frames, target, thrown) {
-  if (!thrown || !target || frames.length < 2) return null;
-  const L = frames[frames.length - 1], Pv = frames[frames.length - 2];
-  const T = L.pos.get(target), T0 = Pv.pos.get(target), B = L.pos.get(0);
-  if (!T || !T0 || !B) return null;
-  const dt = (L.t - Pv.t) || 0.1, V = [(T[0] - T0[0]) / dt, (T[1] - T0[1]) / dt];
-  const D = [T[0] - B[0], T[1] - B[1]], dist = Math.hypot(D[0], D[1]);
-  if (dist < 1.5) return null;                       // ball already reached him in the real data
-  const S = BALL_SPEED, a = V[0] ** 2 + V[1] ** 2 - S * S, b = 2 * (D[0] * V[0] + D[1] * V[1]), c = dist * dist;
-  const disc = b * b - 4 * a * c;
-  let tau = disc >= 0 && a !== 0 ? (-b - Math.sqrt(disc)) / (2 * a) : dist / S;
-  if (!(tau > 0)) tau = dist / S;
-  tau = Math.min(Math.max(tau, 0.2), 2.5);
-  return { tau, T, V, B, C: [T[0] + V[0] * tau, T[1] + V[1] * tau], target, last: L.pos };
-}
-
 function posAt(t) {
-  const P = anim.play;
-  if (P.est && t > P.realEnd) {
-    const e = P.est, u = t - P.realEnd, k = Math.min(1, u / e.tau), out = new Map(e.last);
-    const tp = [e.T[0] + e.V[0] * u, e.T[1] + e.V[1] * u];                  // he keeps running on his line
-    out.set(e.target, tp);
-    out.set(0, k < 1 ? [e.B[0] + (e.C[0] - e.B[0]) * k, e.B[1] + (e.C[1] - e.B[1]) * k] : tp);
-    return out;
-  }
   const fr = anim.play.frames, i = fr.findIndex(f => f.t > t);
   if (i === -1) return fr[fr.length - 1].pos;
   if (i === 0) return fr[0].pos;
@@ -904,14 +874,8 @@ function draw() {
     x.att.forEach(c => { held.add(c); const cp = pos.get(c); if (cp) { g.beginPath(); g.moveTo(X(dp[1]), Y(dp[0])); g.lineTo(X(cp[1]), Y(cp[0])); g.stroke(); } });
   });
   const isDecoy = new Set((P.decoys || []).filter(x => x.id === me).map(x => x.id));
-  const estNow = P.est && anim.t > P.realEnd + 1e-6;
-  if (estNow) {
-    g.setLineDash([3 * dpr, 5 * dpr]); g.strokeStyle = "rgba(255,255,255,.8)"; g.lineWidth = 1.5 * dpr;
-    g.beginPath(); g.moveTo(X(P.est.B[1]), Y(P.est.B[0])); g.lineTo(X(P.est.C[1]), Y(P.est.C[0])); g.stroke(); g.setLineDash([]);
-  }
   pos.forEach(([x, y], id) => {
     if (!id) return;
-    g.globalAlpha = estNow && id !== tgt && id !== me ? 0.4 : 1;
     const role = roles[id] || "", def = role === "coverage" || role === "rush";
     g.beginPath(); g.arc(X(y), Y(x), id === me ? r * 1.2 : r, 0, Math.PI * 2);
     g.fillStyle = id === me ? tok("--pylon-fill") : (id === tgt && P.F.thrown) ? tok("--tv-yellow") : def ? tok("--def") : tok("--off");
@@ -920,7 +884,6 @@ function draw() {
     if (atKey && held.has(id)) { g.lineWidth = 3 * dpr; g.strokeStyle = decoyCol; }
     g.stroke();
   });
-  g.globalAlpha = 1;
   const b = pos.get(0);
   if (b) { g.beginPath(); g.ellipse(X(b[1]), Y(b[0]), r * .55, r * .38, 0, 0, Math.PI * 2); g.fillStyle = "#7a4a22"; g.fill(); g.strokeStyle = "#fff"; g.lineWidth = dpr; g.stroke(); }
   g.font = `600 ${Math.max(11 * dpr, s * 1.25)}px ${tok("--f-body")}`; g.textAlign = "left"; g.textBaseline = "middle";
@@ -931,20 +894,12 @@ function draw() {
                                  else label(me, `${short(P.p.name)} · decoy ×${x.n} · ${Math.round(x.score)}`, decoyCol); });
   if (tgt && tgt !== me && P.F.thrown) label(tgt, short(D.names[tgt] || "") + " · target", tok("--tv-yellow"));
   if (atKey) { g.font = `800 ${Math.max(14 * dpr, s * 2.2)}px ${tok("--f-display")}`; g.textAlign = "left"; g.textBaseline = "top";
-    g.fillStyle = "#fff"; g.fillText(P.F.thrown ? (estNow ? (anim.t - P.realEnd >= P.est.tau ? ({ C: "CAUGHT", I: "INCOMPLETE", IN: "INTERCEPTED" }[P.q.result] || "BALL ARRIVES") : "BALL IN THE AIR") : "THROW") : (P.q.result === "S" ? "SACK" : "END OF PLAY"), 8 * dpr, 8 * dpr); }
-  if (estNow) {
-    const txt = "ESTIMATED BALL FLIGHT · tracking ends 0.5 s after the throw";
-    g.font = `700 ${Math.max(11 * dpr, s * 1.2)}px ${tok("--f-body")}`; g.textAlign = "left"; g.textBaseline = "bottom";
-    const w = g.measureText(txt).width + 16 * dpr, h = Math.max(20 * dpr, s * 2);
-    g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(6 * dpr, H - h - 6 * dpr, Math.min(w, W - 12 * dpr), h);
-    g.fillStyle = tok("--tv-yellow"); g.fillText(txt, 14 * dpr, H - 6 * dpr - h * 0.25, W - 28 * dpr);
-  }
+    g.fillStyle = "#fff"; g.fillText(P.F.thrown ? "THROW" : (P.q.result === "S" ? "SACK" : "END OF PLAY"), 8 * dpr, 8 * dpr); }
   // his real speed right now, from the two tracking frames around t
   const fr = P.frames, j = Math.max(1, Math.min(fr.length - 1, fr.findIndex(f => f.t > anim.t)));
   const pa = fr[j - 1].pos.get(me), pb = fr[j].pos.get(me);
   const v = pa && pb && fr[j].t > fr[j - 1].t ? Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / (fr[j].t - fr[j - 1].t) : null;
-  $("#clock").textContent = estNow ? `${anim.t.toFixed(1)} s · estimated` :
-    `${anim.t.toFixed(1)} s${atKey ? (P.F.thrown ? " · throw" : "") : ""}${v != null ? ` · ${(v * 2.04545).toFixed(0)} mph` : ""}`;
+  $("#clock").textContent = `${anim.t.toFixed(1)} s${atKey ? (P.F.thrown ? " · throw" : "") : ""}${v != null ? ` · ${(v * 2.04545).toFixed(0)} mph` : ""}`;
   $("#scrub").value = Math.round((anim.t - P.t0) / (P.end - P.t0) * 1000);
 }
 
