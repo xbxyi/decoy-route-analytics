@@ -231,6 +231,26 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
   .roster { max-height: 360px; }
 }
 @media (max-width: 480px) { .team { width: calc((100% - 30px) / 6); } .pct { grid-template-columns: minmax(0, 8.5em) minmax(0, 1fr) 3.2em; } }
+
+/* full-width three-column layout: roster | card + percentiles | replay */
+.wrap { max-width: 1900px; }
+.split { grid-template-columns: minmax(0, 290px) minmax(0, 1fr); gap: 28px; }
+.top { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 28px; }
+.side { order: -1; justify-items: stretch; gap: 22px; }
+.side .cardbtn { margin-inline: auto; }
+.side .roles { gap: 18px; }
+.side .role { grid-template-columns: minmax(0, 1fr); gap: 10px; padding-top: 12px; }
+.side .role h3 { font-size: 20px; }
+.side .pct { grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr) 3em; }
+.top .intro { gap: 14px; }
+.roster { max-height: calc(100vh - 140px); }
+@media (max-width: 1250px) { .top { grid-template-columns: minmax(0, 250px) minmax(0, 1fr); } .side .pcard { width: 100%; } }
+@media (max-width: 980px) {
+  .split, .top { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; order: 0; }
+  .side .pcard { width: 236px; }
+  .roster { max-height: 360px; }
+}
 </style>
 
 <div class="wrap">
@@ -448,11 +468,10 @@ function selectPlayer(id, scroll) {
         </div>
       </div>
       <div class="side">
-        <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button>
-          <div class="cardhint">${cardHint(p)}</div></div>
+        <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button></div>
+        <div class="roles">${roles.map(r => roleHTML(p, r)).join("")}</div>
       </div>
     </div>
-    <div class="roles">${roles.map(r => roleHTML(p, r)).join("")}</div>
     <div class="foot">
       <p><b>Separation</b> and <b>distance to nearest receiver</b> are measured at the moment the ball is thrown. <b>Pressures</b>, <b>hits</b>, <b>hurries</b> and <b>beaten</b> are PFF's charting. A defender is <b>targeted</b> when he was the closest coverage defender to the intended receiver at the throw. The match minute counts game time, 15 minutes a quarter.</p>
     </div>`;
@@ -505,7 +524,6 @@ function roleHTML(p, role) {
   const pcts = PCTS[role].filter(([k]) => x["p_" + k] != null);
   return `<section class="role">
     <h3>${ROLE_NAME[role]} <small>${n} ${ROLE_BASE[role]}${role === p.primary ? "" : " · secondary job"}</small></h3>
-    <div class="counts">${COUNTS[role].map(([k, lab, f]) => `<div class="count"><span class="num">${f(x[k])}</span><span class="lab">${lab}</span></div>`).join("")}</div>
     <div class="pcts">
       ${pcts.length ? pcts.map(([k, lab]) => { const v = x["p_" + k]; return `<div class="pct"><span>${lab}</span>
         <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${v}th</span></div>`; }).join("")
@@ -649,7 +667,7 @@ function sizeCanvas() {
   if (!W) return;
   c.style.visibility = "visible";
   let h = W * len / 53.3, w = W;
-  const cap = Math.min(window.innerHeight * 0.72, 680);
+  const cap = Math.min(window.innerHeight * 0.84, 980);
   if (h > cap) { w = W * cap / h; h = cap; }
   const dpr = window.devicePixelRatio || 1;
   c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); c.style.width = w + "px"; c.style.height = h + "px";
