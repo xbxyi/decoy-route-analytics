@@ -210,6 +210,20 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
 .pcard .lower .attrs div { font-size: 1.02em; line-height: 1.18; }
 .pcard .lower .bio { position: static; font-size: .6em; line-height: 1.25; }
 
+
+/* match dropdown above the replay; plays below it */
+.top .intro { align-content: start; }
+.matchbar { display: grid; gap: 6px; }
+#matchsel { width: 100%; min-width: 0; font: 700 18px/1.2 var(--f-display); letter-spacing: .02em; text-transform: uppercase;
+  padding: 10px 40px 10px 12px; border: 1px solid var(--rule); border-radius: 3px; background-color: var(--surface); color: var(--ink);
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--pylon) 50%), linear-gradient(135deg, var(--pylon) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%; background-size: 6px 6px; background-repeat: no-repeat; }
+#matchsel:hover { border-color: var(--ink); }
+.matchline { font: 400 13px var(--f-data); color: var(--muted); min-height: 1.2em; }
+.picker .plays { max-height: none; }
+@media (max-width: 1100px) { .side { grid-template-columns: minmax(0, 1fr); justify-items: center; } }
+
 @media (max-width: 980px) {
   header.mast, .split, .film, .role { grid-template-columns: minmax(0, 1fr); }
   header.mast .source { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule); padding-top: 12px; }
@@ -415,6 +429,11 @@ function selectPlayer(id, scroll) {
           <div class="tag">${p.num != null ? "#" + p.num + " · " : ""}${esc(p.pos || "")} · ${esc(TEAM_NAMES[p.team] || p.team)} · ${ROLE_NAME[p.primary] || ""}</div>
           <h2>${esc(p.name)}</h2>
         </div>
+        <div class="matchbar">
+          <label class="eyebrow" for="matchsel">Match</label>
+          <select id="matchsel" disabled><option>Loading his games…</option></select>
+          <div class="matchline" id="matchline"></div>
+        </div>
           <div class="fieldbox">
             <div class="canvaswrap"><canvas id="field" role="img" aria-label="Overhead replay of the selected play"></canvas></div>
             <div class="transport"><button id="playbtn" type="button">Pause</button>
@@ -423,16 +442,14 @@ function selectPlayer(id, scroll) {
               <span><i style="background:var(--tv-yellow)"></i>Target</span><span><i style="background:var(--off)"></i>Offense</span>
               <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
           </div>
+        <div class="picker">
+          <div class="eyebrow" id="playshead">Plays</div>
+          <div class="plays" id="plays"></div>
+        </div>
       </div>
       <div class="side">
         <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button>
           <div class="cardhint">${cardHint(p)}</div></div>
-        <div class="picker">
-          <div class="eyebrow">Pick a match</div>
-          <div class="matches" id="matches"><p class="empty">Loading his games…</p></div>
-          <div class="eyebrow" id="playshead">Plays</div>
-          <div class="plays" id="plays"></div>
-        </div>
       </div>
     </div>
     <div class="roles">${roles.map(r => roleHTML(p, r)).join("")}</div>
@@ -442,7 +459,7 @@ function selectPlayer(id, scroll) {
   $("#cardbtn").onclick = () => walkout(p);
   getFaces(p.team).then(() => refreshCard(p));
   getFilm(p.team).then(F => { if (state.player === p.id) renderMatches(p, (F.plays || {})[p.id] || []); })
-    .catch(() => { $("#matches").innerHTML = `<p class="empty">Couldn't load the replays for ${esc(p.team)}.</p>`; });
+    .catch(() => { $("#matchsel").innerHTML = `<option>Couldn't load the replays for ${esc(p.team)}</option>`; });
   if (scroll && window.matchMedia("(max-width: 980px)").matches) $("#profile").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -451,22 +468,16 @@ function renderMatches(p, plays) {
   p.games.forEach(g => { const k = g.gameId; (byGame[k] = byGame[k] || { ...g, lines: [] }).lines.push(gameLine(g)); });
   const games = Object.values(byGame).sort((a, b) => a.week - b.week);
   const best = plays.filter(q => q.best);
-  const items = [{ key: "best", week: null, title: "Season best", sub: `${best.length} top plays from weeks 1–8`, plays: best }]
-    .concat(games.map(g => ({ key: String(g.gameId), week: g.week,
-      title: `${TEAM_NAMES[p.team] || p.team} vs ${TEAM_NAMES[g.opp] || g.opp}`,
-      wk: `Week ${g.week} · ${niceDate(g.date)} · ${g.home ? "home" : "away"}`,
-      sub: g.lines.join(" · "), plays: plays.filter(q => String(q.gameId) === String(g.gameId)) })));
-  $("#matches").innerHTML = items.map((m, i) => `
-    <button class="match" data-i="${i}" aria-current="${i === 0}">
-      <span class="mw">${m.wk || "Weeks 1–8"}</span>
-      <span class="mn">${esc(m.title)}</span>
-      <span class="ml">${esc(m.sub)}</span>
-    </button>`).join("");
-  const pick = i => {
-    $("#matches").querySelectorAll(".match").forEach(b => b.setAttribute("aria-current", +b.dataset.i === i));
-    renderPlays(p, items[i]);
-  };
-  $("#matches").querySelectorAll(".match").forEach(b => b.onclick = () => pick(+b.dataset.i));
+  const items = [{ week: null, label: `Season best · his top ${best.length} plays, weeks 1–8`, sub: "", plays: best }]
+    .concat(games.map(g => ({ week: g.week,
+      label: `Week ${g.week} · ${niceDate(g.date)} · ${TEAM_NAMES[p.team] || p.team} vs ${TEAM_NAMES[g.opp] || g.opp}`,
+      sub: `${g.home ? "Home" : "Away"} · ${g.lines.join(" · ")}`,
+      plays: plays.filter(q => String(q.gameId) === String(g.gameId)) })));
+  const sel = $("#matchsel");
+  sel.innerHTML = items.map((m, i) => `<option value="${i}">${esc(m.label)}</option>`).join("");
+  sel.disabled = false;
+  const pick = i => { $("#matchline").textContent = items[i].sub; renderPlays(p, items[i]); };
+  sel.onchange = () => pick(+sel.value);
   pick(0);
 }
 
