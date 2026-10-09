@@ -9,3 +9,7 @@ __pycache__/
 # generated app data — rebuild with the scripts in src/
 app/*.json
 app_profiles/*.json
+
+# deploy staging folder (copy of app_profiles with data)
+site/
+.vercel/
