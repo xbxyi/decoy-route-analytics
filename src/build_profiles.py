@@ -176,14 +176,17 @@ PCT = {"route": [("sep", True), ("tgt_share", True), ("yds", True), ("top", True
        "qb": [("comp_pct", True), ("yds", True), ("sack_rate", False), ("tt", False), ("ypa", True), ("int_rate", False)]}
 
 
-EXTRA = ["sep", "target", "catch", "sack", "hit", "hurry", "allowed", "tt", "int", "targeted", "comp", "near"]
+EXTRA = ["sep", "target", "catch", "sack", "hit", "hurry", "allowed", "tt", "int", "targeted", "comp", "near",
+         "decoy_n", "decoy_score"]
+DECOY_REPS = os.path.join(HERE, "..", "out", "decoy_reps.parquet")   # from decoy.py
 
 
 def play_score(role: str) -> pl.Expr:
     """How good a play was for this player in this job — used to pick replays per game."""
     c = lambda n: pl.col(n).cast(pl.Float64).fill_null(0)
     return {
-        "route": c("catch") * 1000 + c("yds") * 10 + c("target") * 100 + c("sep"),
+        # route runners: their best DECOY plays — the brief's score (defenders x yards from target)
+        "route": c("decoy_score") * 10 + c("decoy_n"),
         "rush": c("sack") * 1000 + c("hit") * 500 + c("hurry") * 300 + c("top"),
         "block": (1 - c("allowed")) * 1000 + c("tt") * 10,
         "coverage": c("int") * 2000 + (c("targeted") * (1 - c("comp"))) * 1000 + (10 - c("near")),
@@ -212,6 +215,9 @@ def main():
         if k % 20 == 0:
             print(f"  game {k + 1}/{len(gids)}  rows={len(rows):,}", flush=True)
     df = pl.DataFrame(rows, infer_schema_length=None)
+    dr = (pl.read_parquet(DECOY_REPS).select(["gameId", "playId", "nflId", "attached", "score_raw"])
+            .rename({"attached": "decoy_n", "score_raw": "decoy_score"}))
+    df = df.join(dr, on=["gameId", "playId", "nflId"], how="left")
     print(f"player-plays: {df.height:,}")
 
     games = d.games().select(["gameId", "week", "gameDate", "homeTeamAbbr", "visitorTeamAbbr"])
@@ -272,7 +278,8 @@ def main():
     picks = []
     for role in AGG:
         sub_ = (df.filter((pl.col("role") == role)
-                          & pl.col("nflId").is_in([n for n, r in primary.items() if r == role]))
+                          & pl.col("nflId").is_in([n for n, r in primary.items() if r == role])
+                          & ((pl.col("decoy_n").fill_null(0) >= 1) if role == "route" else pl.lit(True)))
                   .with_columns(play_score(role).alias("score")))
         per_game = (sub_.sort("score", descending=True)
                         .group_by(["nflId", "gameId"], maintain_order=True).head(PER_GAME))

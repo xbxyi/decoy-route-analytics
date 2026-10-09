@@ -424,6 +424,7 @@ function renderRoster() {
   $("#roster").querySelectorAll(".prow").forEach(b => b.onclick = () => selectPlayer(+b.dataset.id, true));
 }
 
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
 function pctColor(v) { return v >= 67 ? "var(--good)" : v >= 34 ? "var(--mid)" : "var(--bad)"; }
 
 const TEAM_NAMES = { ARI: "Arizona Cardinals", ATL: "Atlanta Falcons", BAL: "Baltimore Ravens", BUF: "Buffalo Bills",
@@ -458,7 +459,8 @@ function gameLine(g) {
 function playTitle(q) {
   const m = q.me || {};
   switch (q.role) {
-    case "route": return m.catch ? `${q.yds}-yard catch` : m.target ? (q.result === "IN" ? "Targeted, intercepted" : "Targeted, incomplete") : `Route, ${f1(m.sep)} yd open at the throw`;
+    case "route": return m.decoy_n ? `Decoy: drew ${m.decoy_n} defender${m.decoy_n > 1 ? "s" : ""} · score ${Math.round(m.decoy_score)}`
+      : m.catch ? `${q.yds}-yard catch` : `Route, ${f1(m.sep)} yd open at the throw`;
     case "qb": return m.comp ? `${q.yds}-yard completion` : m.sack ? "Sacked" : m.int ? "Interception thrown" : "Incomplete pass";
     case "rush": return m.sack ? "Sack" : m.hit ? "QB hit" : m.hurry ? "Hurried the QB" : "Pass rush";
     case "block": return m.allowed ? "Pressure allowed" : m.tt ? `Clean pocket, ${f1(m.tt)} s to throw` : "Clean rep";
@@ -514,11 +516,11 @@ function selectPlayer(id, scroll) {
           <div class="eyebrow" id="playshead">Plays</div>
           <div class="plays" id="plays"></div>
         </div>
-        <div class="roles under">${roles.map(r => roleHTML(p, r)).join("")}</div>
       </div>
       <div class="side">
         <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button></div>
         <div class="cardback">${cardBackHTML(p)}</div>
+        <div class="roles">${roles.filter(r => PCTS[r].some(([k]) => p.roles[r]["p_" + k] != null)).map(r => roleHTML(p, r)).join("")}</div>
       </div>
     </div>
     <div class="foot">
@@ -541,7 +543,9 @@ function renderMatches(p, plays) {
   p.games.forEach(g => { const k = g.gameId; (byGame[k] = byGame[k] || { ...g, lines: [] }).lines.push(gameLine(g)); });
   const games = Object.values(byGame).sort((a, b) => a.week - b.week);
   const best = plays.filter(q => q.best);
-  const items = [{ week: null, label: `Season best · his top ${best.length} plays, weeks 1–8`, sub: "", plays: best }]
+  const what = p.primary === "route" ? "decoy plays" : "plays";
+  const items = [{ week: null, label: `Season best · his top ${best.length} ${what}, weeks 1–8`,
+                   sub: p.primary === "route" ? "Ranked by decoy score: defenders within 5 yd × their distance from the target, at the throw" : "", plays: best }]
     .concat(games.map(g => ({ week: g.week,
       label: `Week ${g.week} · ${niceDate(g.date)} · ${TEAM_NAMES[p.team] || p.team} vs ${TEAM_NAMES[g.opp] || g.opp}`,
       sub: `${g.home ? "Home" : "Away"} · ${g.lines.join(" · ")}`,
@@ -555,9 +559,10 @@ function renderMatches(p, plays) {
 }
 
 function renderPlays(p, m) {
-  $("#playshead").textContent = m.week ? `Plays · week ${m.week}` : "Season best plays";
+  const what = p.primary === "route" ? "Best decoy plays" : "Best plays";
+  $("#playshead").textContent = m.week ? `${what} · week ${m.week}` : `${what} · season`;
   if (!m.plays.length) {
-    $("#plays").innerHTML = `<p class="empty">No replay saved for this match.</p>`;
+    $("#plays").innerHTML = `<p class="empty">${p.primary === "route" ? "He didn't draw a defender as a decoy in this match." : "No replay saved for this match."}</p>`;
     return;
   }
   $("#plays").innerHTML = m.plays.map((q, i) => `
@@ -580,7 +585,7 @@ function roleHTML(p, role) {
     <h3>${ROLE_NAME[role]} <small>${n} ${ROLE_BASE[role]}${role === p.primary ? "" : " · secondary job"}</small></h3>
     <div class="pcts">
       ${pcts.length ? pcts.map(([k, lab]) => { const v = x["p_" + k]; return `<div class="pct"><span>${lab}</span>
-        <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${v}th</span></div>`; }).join("")
+        <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${ordinal(v)}</span></div>`; }).join("")
         + `<p class="pnote">Percentile among ${ROLE_WHO[role]} with ${D.meta.qualify}+ ${ROLE_BASE[role]}. Higher is better on every bar.</p>`
         : `<p class="pnote">Needs ${D.meta.qualify}+ ${ROLE_BASE[role]} to be compared with other ${ROLE_WHO[role]} (has ${n}).</p>`}
     </div>
