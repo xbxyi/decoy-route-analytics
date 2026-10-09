@@ -519,7 +519,7 @@ function selectPlayer(id, scroll) {
                 `<button type="button" class="spd" data-r="${r}" aria-pressed="${r === playRate}">${l}</button>`).join("")}</span></div>
             <div class="legend"><span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))}</span>
               <span><i style="background:var(--tv-yellow)"></i>Target</span>
-              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Defenders he baited</span>
+              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Lured</span>
               <span><i style="background:var(--off)"></i>Offense</span>
               <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
             <div class="decoys" id="decoys"></div>
@@ -790,7 +790,7 @@ function renderDecoys(decoys, target) {
   if (!target) { el.innerHTML = `<span class="dh">Decoys</span> No pass thrown on this play, so no decoys.`; return; }
   const live = decoys.filter(x => x.n);
   el.innerHTML = `<span class="dh">His decoy work at the throw</span> ` + (live.length
-    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> baited ${(x.att || []).map(c => esc(short(D.names[c] || ""))).join(", ")}: ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = ${f1(x.raw)}${x.tm
+    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> lured ${(x.att || []).map(c => esc(short(D.names[c] || ""))).join(", ")}: ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = ${f1(x.raw)}${x.tm
         ? `, ÷ ${1 + x.tm} for ${x.tm} teammate${x.tm > 1 ? "s" : ""} in his zone` : ", no teammates in his zone"} → score <b class="ds">${f1(x.score)}</b>${x.n >= 2 ? ' <i class="d2">2+</i>' : ""}</span>`).join("")
     : `He had no defender within ${DECOY_YDS} yards at the throw on this play.`);
 }
