@@ -40,7 +40,8 @@ THROW = ("pass_forward", "autoevent_passforward")
 END = ("qb_sack", "qb_strip_sack", "run", "fumble", "pass_shovel")
 MPH = 2.04545          # yd/s -> mph
 QUALIFY = 40           # snaps in a role to get percentiles
-SHOW = 2               # showcase plays per player
+PER_GAME = 2           # replay plays stored per player per game
+SEASON_BEST = 3        # flagged as season highlights
 
 ROLE = {"pass route": "route", "pass rush": "rush", "pass block": "block",
         "coverage": "coverage", "pass": "qb"}
@@ -116,16 +117,22 @@ def play_rows(d: BDB, gid: int, pff: pl.DataFrame, plays: dict, tgt: dict):
 
 
 def frames_for(tr: pl.DataFrame, pid: int) -> dict:
-    g = tr.filter(pl.col("playId") == pid).sort(["frameId", "nflId"], nulls_last=True)
+    """Compact replay: ids once, then per frame [t, x1*10, y1*10, x2*10, ...] (ball id 0)."""
+    g = tr.filter(pl.col("playId") == pid)
     snapf, key = g["snap"][0], g["key"][0]
-    g = g.filter(((pl.col("frameId") - snapf) % 2 == 0) | (pl.col("frameId") == key))
+    g = g.filter(((pl.col("frameId") - snapf) % 2 == 0) | (pl.col("frameId") == key)).with_columns(pl.col("nflId").fill_null(0))
+    ids = sorted(g["nflId"].unique().to_list())
+    pos = {(f, n): (x, y) for f, n, x, y in g.select(["frameId", "nflId", "x", "y"]).iter_rows()}
     frames = []
-    for (fid,), f in g.group_by(["frameId"], maintain_order=True):
-        frames.append([fid - snapf] + [[int(n) if n is not None else 0, round(x, 1), round(y, 1)]
-                                       for n, x, y in f.select(["nflId", "x", "y"]).iter_rows()])
+    for fid in sorted(g["frameId"].unique().to_list()):
+        row = [fid - snapf]
+        for n in ids:
+            x, y = pos.get((fid, n), (None, None))
+            row += [round(x * 10), round(y * 10)] if x is not None else [-1, -1]
+        frames.append(row)
     roles = {int(n): ROLE.get((r or "").lower(), "") for n, r in
-             g.select(["nflId", "pff_role"]).unique().iter_rows() if n is not None}
-    return dict(key=key - snapf, thrown=g["thr"][0] is not None, frames=frames, roles=roles)
+             g.select(["nflId", "pff_role"]).unique().iter_rows() if n}
+    return dict(key=key - snapf, thrown=g["thr"][0] is not None, ids=ids, frames=frames, roles=roles)
 
 
 AGG = {
@@ -169,18 +176,19 @@ PCT = {"route": [("sep", True), ("tgt_share", True), ("yds", True), ("top", True
        "qb": [("comp_pct", True), ("yds", True), ("sack_rate", False), ("tt", False), ("ypa", True), ("int_rate", False)]}
 
 
-def showcase(df: pl.DataFrame, role: str) -> pl.DataFrame:
-    if role == "route":
-        return df.filter(pl.col("catch")).sort("yds", descending=True)
-    if role == "rush":
-        return df.filter(pl.col("pressure") == 1).sort(["sack", "hit"], descending=True)
-    if role == "block":
-        return df.filter((pl.col("allowed") == 0) & pl.col("tt").is_not_null()).sort("tt", descending=True)
-    if role == "coverage":
-        return (df.filter(pl.col("targeted") & ~pl.col("comp"))
-                  .sort(["int", "near"], descending=[True, False]))
-    if role == "qb":
-        return df.filter(pl.col("comp")).sort("yds", descending=True)
+EXTRA = ["sep", "target", "catch", "sack", "hit", "hurry", "allowed", "tt", "int", "targeted", "comp", "near"]
+
+
+def play_score(role: str) -> pl.Expr:
+    """How good a play was for this player in this job — used to pick replays per game."""
+    c = lambda n: pl.col(n).cast(pl.Float64).fill_null(0)
+    return {
+        "route": c("catch") * 1000 + c("yds") * 10 + c("target") * 100 + c("sep"),
+        "rush": c("sack") * 1000 + c("hit") * 500 + c("hurry") * 300 + c("top"),
+        "block": (1 - c("allowed")) * 1000 + c("tt") * 10,
+        "coverage": c("int") * 2000 + (c("targeted") * (1 - c("comp"))) * 1000 + (10 - c("near")),
+        "qb": c("comp") * 1000 + c("yds") * 10 - c("sack") * 500 - c("int") * 800,
+    }[role]
 
 
 def main():
@@ -263,28 +271,39 @@ def main():
     primary = dict(primary.iter_rows())
     picks = []
     for role in AGG:
-        sub = df.filter(pl.col("role") == role)
-        sh = showcase(sub, role)
-        sh = sh.filter(pl.col("nflId").is_in([n for n, r in primary.items() if r == role]))
-        picks.append(sh.group_by("nflId", maintain_order=True).head(SHOW).select(["nflId", "gameId", "playId", "role"]))
-    picks = pl.concat(picks)
-    print(f"showcase plays: {picks.height:,}")
+        sub_ = (df.filter((pl.col("role") == role)
+                          & pl.col("nflId").is_in([n for n, r in primary.items() if r == role]))
+                  .with_columns(play_score(role).alias("score")))
+        per_game = (sub_.sort("score", descending=True)
+                        .group_by(["nflId", "gameId"], maintain_order=True).head(PER_GAME))
+        best = (sub_.sort("score", descending=True).group_by("nflId", maintain_order=True).head(SEASON_BEST)
+                    .select(["nflId", "gameId", "playId"]).with_columns(pl.lit(True).alias("best")))
+        cols = ["nflId", "gameId", "playId", "role", "score"] + [c for c in EXTRA if c in sub_.columns]
+        per_game = (pl.concat([per_game.select(cols),
+                               sub_.join(best, on=["nflId", "gameId", "playId"]).select(cols)],
+                              how="diagonal_relaxed").unique(["nflId", "gameId", "playId"])
+                      .join(best, on=["nflId", "gameId", "playId"], how="left"))
+        picks.append(per_game)
+    picks = pl.concat(picks, how="diagonal_relaxed").with_columns(pl.col("best").fill_null(False))
+    print(f"replay plays: {picks.height:,}")
 
     nm = dict(zip(names["nflId"], names["displayName"]))
     pos = dict(zip(names["nflId"], names["officialPosition"]))
-    film = defaultdict(dict)
-    show = defaultdict(list)
-    for n, gid, pid, role in picks.iter_rows():
+    film = defaultdict(lambda: {"frames": {}, "plays": defaultdict(list)})
+    for r_ in picks.sort("score", descending=True).iter_rows(named=True):
+        n, gid, pid, role, best = r_["nflId"], r_["gameId"], r_["playId"], r_["role"], r_["best"]
         tm = team_of.get(n, "UNK")
         k = f"{gid}-{pid}"
-        if k not in film[tm]:
-            film[tm][k] = frames_for(tracks[gid], pid)
+        if k not in film[tm]["frames"]:
+            film[tm]["frames"][k] = frames_for(tracks[gid], pid)
         p = plays[(gid, pid)]
-        show[n].append(dict(key=k, role=role, week=p["week"], date=p["gameDate"], off=p["possessionTeam"],
-                            dff=p["defensiveTeam"], q=p["quarter"], clock=p["gameClock"], down=p["down"],
-                            togo=p["yardsToGo"], desc=p["playDescription"], result=p["passResult"],
-                            yds=p["playResult"], coverage=p["pff_passCoverage"],
-                            target=tgt.get((gid, pid))))
+        film[tm]["plays"][n].append(dict(
+            key=k, gameId=gid, role=role, best=best, week=p["week"], q=p["quarter"], clock=p["gameClock"],
+            down=p["down"], togo=p["yardsToGo"], desc=p["playDescription"], result=p["passResult"],
+            yds=p["playResult"], coverage=p["pff_passCoverage"], target=tgt.get((gid, pid)),
+            off=p["possessionTeam"], dff=p["defensiveTeam"],
+            me={c: (round(r_[c], 2) if isinstance(r_[c], float) else r_[c]) for c in EXTRA
+                if r_.get(c) not in (None, False, 0)}))
 
     os.makedirs(OUT, exist_ok=True)
     players = []
@@ -298,12 +317,12 @@ def main():
         g = []
         for r in log.get(n, []):
             opp = r["visitorTeamAbbr"] if r["homeTeamAbbr"] == tm else r["homeTeamAbbr"]
-            g.append({k: v for k, v in dict(week=r["week"], date=r["gameDate"], opp=opp,
+            g.append({k: v for k, v in dict(gameId=r["gameId"], week=r["week"], date=r["gameDate"], opp=opp,
                                             home=r["homeTeamAbbr"] == tm, role=r["role"], n=r["n"],
                                             targets=r["targets"], catches=r["catches"], yds=r["yds"],
                                             pressures=r["pressures"], sacks=r["sacks"], allowed=r["allowed"],
                                             targeted=r["targeted"], comp=r["comp"], att=r["att"],
-                                            ints=r["ints"]).items() if v not in (None, 0, False) or k in ("week", "n")})
+                                            ints=r["ints"]).items() if v not in (None, 0, False) or k in ("week", "n", "gameId")})
         b = bio.get(n, {})
         age = None
         if b.get("birthDate"):
@@ -314,7 +333,7 @@ def main():
                 age = None
         players.append(dict(id=n, name=nm.get(n, str(n)), pos=pos.get(n), team=tm, primary=primary.get(n),
                             num=jersey.get(n), ht=b.get("height"), wt=b.get("weight"), college=html.unescape(b["collegeName"]) if b.get("collegeName") else None, age=age,
-                            roles=roles, games=g, plays=show.get(n, [])))
+                            roles=roles, games=g))
     meta = dict(season=2021, weeks="1–8", games=len(gids), plays=int(df.select(pl.struct("gameId", "playId").n_unique()).item()),
                 players=len(players), qualify=QUALIFY)
     with open(os.path.join(OUT, "index.json"), "w", encoding="utf-8") as f:
@@ -322,7 +341,8 @@ def main():
                   separators=(",", ":"), ensure_ascii=False)
     for tm, fl in film.items():
         with open(os.path.join(OUT, f"film_{tm}.json"), "w", encoding="utf-8") as f:
-            json.dump(fl, f, separators=(",", ":"))
+            json.dump({"frames": fl["frames"], "plays": {str(k): v for k, v in fl["plays"].items()}}, f,
+                      separators=(",", ":"), ensure_ascii=False)
     tot = sum(os.path.getsize(os.path.join(OUT, x)) for x in os.listdir(OUT))
     print(f"wrote {OUT}: {len(players)} players, {len(film)} film files, {tot / 1e6:.1f} MB total, "
           f"index {os.path.getsize(os.path.join(OUT, 'index.json')) / 1e6:.1f} MB")

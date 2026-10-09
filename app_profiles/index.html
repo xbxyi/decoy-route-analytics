@@ -180,6 +180,33 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
 @media (max-width: 640px) { .top { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .walkout.go *, .walkout.go .flare, .cardbtn:hover .shine { animation: none !important; } }
 
+
+/* replay left, card + match picker right */
+.top { grid-template-columns: minmax(0, 1fr) minmax(0, 310px); }
+.side { display: grid; gap: 20px; align-content: start; min-width: 0; }
+@media (max-width: 1100px) { .top { grid-template-columns: minmax(0, 1fr); } .side { grid-template-columns: minmax(0, 260px) minmax(0, 1fr); align-items: start; } }
+@media (max-width: 640px) { .side { grid-template-columns: minmax(0, 1fr); } }
+/* match picker */
+.picker { display: grid; gap: 10px; min-width: 0; align-content: start; }
+.matches { display: grid; max-height: 290px; overflow-y: auto; border-top: 2px solid var(--ink); }
+.match { text-align: left; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 9px 6px; cursor: pointer; display: grid; gap: 2px; }
+.match:hover, .match[aria-current="true"] { background: var(--tint); }
+.match[aria-current="true"] .mn { color: var(--pylon); }
+.match .mw { font: 600 11px/1.2 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.match .mn { font: 700 19px/1.1 var(--f-display); text-transform: uppercase; }
+.match .ml { font: 400 12px var(--f-data); color: var(--muted); }
+.picker .plays { max-height: 360px; overflow-y: auto; }
+.play .ph .min { color: var(--pylon); }
+.empty { color: var(--muted); font-size: 14px; padding: 12px 4px; }
+
+/* card: name bar, then one flowing block for ratings + bio so nothing overlaps */
+.pcard .face { bottom: 54%; width: 70%; right: 3%; }
+.pcard .nm { top: 46%; }
+.pcard .lower { position: absolute; left: 13%; right: 13%; top: 57.5%; bottom: 11%; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; }
+.pcard .lower .attrs { position: static; gap: 0 12px; }
+.pcard .lower .attrs div { font-size: 1.02em; line-height: 1.18; }
+.pcard .lower .bio { position: static; font-size: .6em; line-height: 1.25; }
+
 @media (max-width: 980px) {
   header.mast, .split, .film, .role { grid-template-columns: minmax(0, 1fr); }
   header.mast .source { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule); padding-top: 12px; }
@@ -311,45 +338,56 @@ function renderRoster() {
     html = groups.map(([label, f]) => { const g = L.filter(f); return g.length ? `<div class="unit">${label}</div>` + g.map(p => rowHTML(p)).join("") : ""; }).join("");
   }
   $("#roster").innerHTML = html;
-  $("#roster").querySelectorAll(".prow").forEach(b => b.onclick = () => { selectPlayer(+b.dataset.id, true); walkout(byId.get(+b.dataset.id)); });
+  $("#roster").querySelectorAll(".prow").forEach(b => b.onclick = () => selectPlayer(+b.dataset.id, true));
 }
 
 function pctColor(v) { return v >= 67 ? "var(--good)" : v >= 34 ? "var(--mid)" : "var(--bad)"; }
 
-function lede(p) {
-  const r = p.roles, last = esc(p.name.split(" ").slice(-1)[0]);
-  switch (p.primary) {
-    case "route": { const x = r.route; return `${last} ran <b>${x.routes}</b> routes, drew <b>${x.targets}</b> targets and caught <b>${x.catches}</b> for <b>${x.yds}</b> yards. When the ball was thrown he had <b>${f1(x.sep)}</b> yards of space from the nearest defender on average.`; }
-    case "rush": { const x = r.rush; return `${last} rushed the passer <b>${x.rushes}</b> times and got to the quarterback on <b>${pc(x.pressure_rate)}</b> of them: <b>${x.pressures}</b> pressures including <b>${x.sacks}</b> sack${x.sacks === 1 ? "" : "s"}.`; }
-    case "block": { const x = r.block; return `${last} pass blocked <b>${x.blocks}</b> times and allowed pressure on <b>${x.allowed}</b> of them (${pc(x.allowed_rate)}), including <b>${x.sacks_allowed}</b> sack${x.sacks_allowed === 1 ? "" : "s"}.`; }
-    case "coverage": { const x = r.coverage; return `${last} dropped into coverage <b>${x.snaps}</b> times, finishing <b>${f1(x.near)}</b> yards from the nearest receiver at the throw on average. As the closest defender to the target he allowed <b>${x.comp}</b> of <b>${x.targeted}</b> for <b>${x.yds}</b> yards with <b>${x.ints}</b> interception${x.ints === 1 ? "" : "s"}.`; }
-    case "qb": { const x = r.qb; return `${last} dropped back <b>${x.dropbacks}</b> times, completing <b>${x.comp}</b> of <b>${x.att}</b> for <b>${int(x.yds)}</b> yards. He released the ball in <b>${f2(x.tt)}</b> s on average and was sacked <b>${x.sacks}</b> times.`; }
+const TEAM_NAMES = { ARI: "Arizona Cardinals", ATL: "Atlanta Falcons", BAL: "Baltimore Ravens", BUF: "Buffalo Bills",
+  CAR: "Carolina Panthers", CHI: "Chicago Bears", CIN: "Cincinnati Bengals", CLE: "Cleveland Browns", DAL: "Dallas Cowboys",
+  DEN: "Denver Broncos", DET: "Detroit Lions", GB: "Green Bay Packers", HOU: "Houston Texans", IND: "Indianapolis Colts",
+  JAX: "Jacksonville Jaguars", KC: "Kansas City Chiefs", LA: "Los Angeles Rams", LAC: "Los Angeles Chargers", LV: "Las Vegas Raiders",
+  MIA: "Miami Dolphins", MIN: "Minnesota Vikings", NE: "New England Patriots", NO: "New Orleans Saints", NYG: "New York Giants",
+  NYJ: "New York Jets", PHI: "Philadelphia Eagles", PIT: "Pittsburgh Steelers", SEA: "Seattle Seahawks", SF: "San Francisco 49ers",
+  TB: "Tampa Bay Buccaneers", TEN: "Tennessee Titans", WAS: "Washington Football Team" };
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function niceDate(mdY) { const [m, d, y] = String(mdY).split("/").map(Number); const dt = new Date(Date.UTC(y, m - 1, d));
+  return isNaN(dt) ? mdY : `${DAYS[dt.getUTCDay()]} ${d} ${MONTHS[m - 1]}`; }
+// game minute like a match clock: Q2 with 8:42 left -> 22'
+function matchMinute(q, clock) {
+  const [mm, ss] = String(clock || "0:0").split(":").map(Number), left = mm + (ss || 0) / 60;
+  const m = q <= 4 ? (q - 1) * 15 + (15 - left) : 60 + (10 - left);
+  return Math.max(1, Math.ceil(m));
+}
+const qLabel = q => q <= 4 ? "Q" + q : "OT";
+
+function gameLine(g) {
+  switch (g.role) {
+    case "route": return `${g.catches || 0} catches, ${g.yds || 0} yds on ${g.targets || 0} targets`;
+    case "rush": return `${g.pressures || 0} pressures${g.sacks ? ", " + g.sacks + " sack" + (g.sacks > 1 ? "s" : "") : ""} on ${g.n} rushes`;
+    case "block": return `${g.allowed || 0} pressures allowed in ${g.n} blocks`;
+    case "coverage": return `targeted ${g.targeted || 0}, allowed ${g.comp || 0}${g.yds ? " for " + g.yds + " yds" : ""}${g.ints ? ", " + g.ints + " INT" : ""}`;
+    case "qb": return `${g.comp || 0}/${g.att || 0}, ${g.yds || 0} yds${g.sacks ? ", sacked " + g.sacks : ""}${g.ints ? ", " + g.ints + " INT" : ""}`;
   }
   return "";
 }
 
-function gameLine(g) {
-  switch (g.role) {
-    case "route": return `${g.n} routes · ${g.catches || 0}/${g.targets || 0} targets · ${g.yds || 0} yds`;
-    case "rush": return `${g.n} rushes · ${g.pressures || 0} pressures${g.sacks ? " · " + g.sacks + " sack" + (g.sacks > 1 ? "s" : "") : ""}`;
-    case "block": return `${g.n} blocks · ${g.allowed || 0} pressures allowed`;
-    case "coverage": return `${g.n} snaps · targeted ${g.targeted || 0}, allowed ${g.comp || 0}${g.yds ? " for " + g.yds + " yds" : ""}${g.ints ? " · " + g.ints + " INT" : ""}`;
-    case "qb": return `${g.comp || 0}/${g.att || 0} · ${g.yds || 0} yds${g.sacks ? " · " + g.sacks + " sacked" : ""}${g.ints ? " · " + g.ints + " INT" : ""}`;
+function playTitle(q) {
+  const m = q.me || {};
+  switch (q.role) {
+    case "route": return m.catch ? `${q.yds}-yard catch` : m.target ? (q.result === "IN" ? "Targeted, intercepted" : "Targeted, incomplete") : `Route, ${f1(m.sep)} yd open at the throw`;
+    case "qb": return m.comp ? `${q.yds}-yard completion` : m.sack ? "Sacked" : m.int ? "Interception thrown" : "Incomplete pass";
+    case "rush": return m.sack ? "Sack" : m.hit ? "QB hit" : m.hurry ? "Hurried the QB" : "Pass rush";
+    case "block": return m.allowed ? "Pressure allowed" : m.tt ? `Clean pocket, ${f1(m.tt)} s to throw` : "Clean rep";
+    case "coverage": return m.int ? "Interception" : m.targeted && !m.comp ? "Pass defended" : m.targeted ? `Allowed a ${q.yds}-yard catch` : `In coverage, ${f1(m.near)} yd from nearest receiver`;
   }
-}
-
-function playTitle(q, p) {
-  if (q.role === "route") return `${q.yds}-yard catch`;
-  if (q.role === "qb") return `${q.yds}-yard completion`;
-  if (q.role === "rush") return q.result === "S" && q.desc.includes(p.name.split(" ").slice(-1)[0]) ? "Sack" : "Pressure on the QB";
-  if (q.role === "block") return "Clean pocket";
-  if (q.role === "coverage") return q.result === "IN" ? "Interception" : "Incompletion as closest defender";
   return "";
 }
 
 function refreshCard(p) {
   const b = $("#cardbtn"); if (b && state.player === p.id) b.innerHTML = cardHTML(p);
 }
+
 function selectPlayer(id, scroll) {
   const p = byId.get(id); if (!p) return;
   state.player = id;
@@ -357,60 +395,85 @@ function selectPlayer(id, scroll) {
   document.querySelectorAll(".prow").forEach(r => r.setAttribute("aria-current", +r.dataset.id === id));
   try { history.replaceState(null, "", "#p" + id); localStorage.setItem("film-player", id); } catch (e) {}
   const roles = ROLE_ORDER.filter(r => p.roles[r]).sort((a, b) => (b === p.primary) - (a === p.primary));
-  const byWeek = {};
-  p.games.forEach(g => { (byWeek[g.week] = byWeek[g.week] || { ...g, lines: [] }).lines.push(gameLine(g)); });
   $("#profile").innerHTML = `
     <div class="top">
       <div class="intro">
         <div class="who">
-          <div class="tag">${p.num != null ? "#" + p.num + " · " : ""}${esc(p.pos || "")} · ${p.team} · ${ROLE_NAME[p.primary] || ""}</div>
+          <div class="tag">${p.num != null ? "#" + p.num + " · " : ""}${esc(p.pos || "")} · ${esc(TEAM_NAMES[p.team] || p.team)} · ${ROLE_NAME[p.primary] || ""}</div>
           <h2>${esc(p.name)}</h2>
         </div>
-        <p class="lede">${lede(p)}</p>
+          <div class="fieldbox">
+            <div class="canvaswrap"><canvas id="field" role="img" aria-label="Overhead replay of the selected play"></canvas></div>
+            <div class="transport"><button id="playbtn" type="button">Pause</button>
+              <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Play timeline"><span class="clock" id="clock">loading</span></div>
+            <div class="legend"><span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))}</span>
+              <span><i style="background:var(--tv-yellow)"></i>Target</span><span><i style="background:var(--off)"></i>Offense</span>
+              <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
+          </div>
       </div>
-      <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button>
-        <div class="cardhint">Ratings are percentiles against other ${ROLE_WHO[p.primary] || "players"}, on a 40–99 scale. Hover a rating for what it measures.</div></div>
+      <div class="side">
+        <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button>
+          <div class="cardhint">Tap the card to open it. Ratings are percentiles against other ${ROLE_WHO[p.primary] || "players"}, on a 40–99 scale.</div></div>
+        <div class="picker">
+          <div class="eyebrow">Pick a match</div>
+          <div class="matches" id="matches"><p class="empty">Loading his games…</p></div>
+          <div class="eyebrow" id="playshead">Plays</div>
+          <div class="plays" id="plays"></div>
+        </div>
+      </div>
     </div>
-    ${p.plays.length ? `
-    <div class="film">
-      <div class="fieldbox">
-        <div class="canvaswrap"><canvas id="field" role="img" aria-label="Overhead replay of the selected play"></canvas></div>
-        <div class="transport"><button id="playbtn" type="button">Pause</button>
-          <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Play timeline"><span class="clock" id="clock">0.0 s</span></div>
-        <div class="legend"><span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))}</span>
-          <span><i style="background:var(--tv-yellow)"></i>Target</span><span><i style="background:var(--off)"></i>Offense</span>
-          <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
-      </div>
-      <div>
-        <div class="eyebrow" style="margin-bottom:8px">Best plays</div>
-        <div class="plays" id="plays">${p.plays.map((q, i) => `
-          <button class="play" data-i="${i}" aria-current="${i === 0}">
-            <span class="ph">Wk ${q.week} · ${q.off} vs ${q.dff} · Q${q.q} ${esc(q.clock)} · ${q.down}&amp;${q.togo}${q.coverage ? " · " + esc(q.coverage) : ""}</span>
-            <span class="pt">${esc(playTitle(q, p))}</span>
-            <span class="pd">${esc(q.desc.replace(/^\([^)]*\)\s*/, "").slice(0, 180))}</span>
-          </button>`).join("")}</div>
-      </div>
-    </div>` : ""}
     <div class="roles">${roles.map(r => roleHTML(p, r)).join("")}</div>
-    <div>
-      <div class="eyebrow" style="margin-bottom:8px">Game by game</div>
-      <div class="log"><table><thead><tr><th>Week</th><th>Date</th><th>Opponent</th><th>What he did</th></tr></thead><tbody>
-        ${Object.values(byWeek).map(g => `<tr><td class="n">${g.week}</td><td class="n">${esc(g.date)}</td><td>${g.home ? "vs" : "at"} ${g.opp}</td><td>${g.lines.map(esc).join("<br>")}</td></tr>`).join("")}
-      </tbody></table></div>
-    </div>
     <div class="foot">
-      <p><b>Separation</b> and <b>distance to nearest receiver</b> are measured at the moment the ball is thrown. <b>Pressures</b>, <b>hits</b>, <b>hurries</b> and <b>beaten</b> are PFF's charting. A defender is <b>targeted</b> when he was the closest coverage defender to the intended receiver at the throw.</p>
+      <p><b>Separation</b> and <b>distance to nearest receiver</b> are measured at the moment the ball is thrown. <b>Pressures</b>, <b>hits</b>, <b>hurries</b> and <b>beaten</b> are PFF's charting. A defender is <b>targeted</b> when he was the closest coverage defender to the intended receiver at the throw. The match minute counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   getFaces(p.team).then(() => refreshCard(p));
-  if (p.plays.length) {
-    $("#plays").querySelectorAll(".play").forEach(b => b.onclick = () => {
-      $("#plays").querySelectorAll(".play").forEach(x => x.setAttribute("aria-current", x === b));
-      loadPlay(p, p.plays[+b.dataset.i]);
-    });
-    loadPlay(p, p.plays[0]);
-  }
+  getFilm(p.team).then(F => { if (state.player === p.id) renderMatches(p, (F.plays || {})[p.id] || []); })
+    .catch(() => { $("#matches").innerHTML = `<p class="empty">Couldn't load the replays for ${esc(p.team)}.</p>`; });
   if (scroll && window.matchMedia("(max-width: 980px)").matches) $("#profile").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderMatches(p, plays) {
+  const byGame = {};
+  p.games.forEach(g => { const k = g.gameId; (byGame[k] = byGame[k] || { ...g, lines: [] }).lines.push(gameLine(g)); });
+  const games = Object.values(byGame).sort((a, b) => a.week - b.week);
+  const best = plays.filter(q => q.best);
+  const items = [{ key: "best", week: null, title: "Season best", sub: `${best.length} top plays from weeks 1–8`, plays: best }]
+    .concat(games.map(g => ({ key: String(g.gameId), week: g.week,
+      title: `${TEAM_NAMES[p.team] || p.team} vs ${TEAM_NAMES[g.opp] || g.opp}`,
+      wk: `Week ${g.week} · ${niceDate(g.date)} · ${g.home ? "home" : "away"}`,
+      sub: g.lines.join(" · "), plays: plays.filter(q => String(q.gameId) === String(g.gameId)) })));
+  $("#matches").innerHTML = items.map((m, i) => `
+    <button class="match" data-i="${i}" aria-current="${i === 0}">
+      <span class="mw">${m.wk || "Weeks 1–8"}</span>
+      <span class="mn">${esc(m.title)}</span>
+      <span class="ml">${esc(m.sub)}</span>
+    </button>`).join("");
+  const pick = i => {
+    $("#matches").querySelectorAll(".match").forEach(b => b.setAttribute("aria-current", +b.dataset.i === i));
+    renderPlays(p, items[i]);
+  };
+  $("#matches").querySelectorAll(".match").forEach(b => b.onclick = () => pick(+b.dataset.i));
+  pick(0);
+}
+
+function renderPlays(p, m) {
+  $("#playshead").textContent = m.week ? `Plays · week ${m.week}` : "Season best plays";
+  if (!m.plays.length) {
+    $("#plays").innerHTML = `<p class="empty">No replay saved for this match.</p>`;
+    return;
+  }
+  $("#plays").innerHTML = m.plays.map((q, i) => `
+    <button class="play" data-i="${i}" aria-current="${i === 0}">
+      <span class="ph">${m.week ? "" : `Wk ${q.week} vs ${esc(q.off === p.team ? q.dff : q.off)} · `}${qLabel(q.q)} ${esc(q.clock)} left · <span class="min">${matchMinute(q.q, q.clock)}'</span> · ${q.down}&amp;${q.togo}</span>
+      <span class="pt">${esc(playTitle(q))}</span>
+      <span class="pd">${esc(q.desc.replace(/^\([^)]*\)\s*/, "").slice(0, 170))}</span>
+    </button>`).join("");
+  $("#plays").querySelectorAll(".play").forEach(b => b.onclick = () => {
+    $("#plays").querySelectorAll(".play").forEach(x => x.setAttribute("aria-current", x === b));
+    loadPlay(p, m.plays[+b.dataset.i]);
+  });
+  loadPlay(p, m.plays[0]);
 }
 
 function roleHTML(p, role) {
@@ -473,9 +536,9 @@ function cardHTML(p) {
       <div class="jn">${p.num ?? ""}</div>${face ? `<img class="face" src="${face}" alt="">` : ""}
       <div class="ovr"><b>${c.ovr ?? "–"}</b><span>${esc(p.pos || "")}</span><i>${p.team}</i></div>
       <div class="nm">${esc(p.name.split(" ").slice(-1)[0])}</div>
-      <div class="attrs">${c.attrs.length ? c.attrs.map(a => `<div title="${ATTR_HELP[a.lab] || ""}"><b>${rate(a.p)}</b><span>${a.lab}</span></div>`).join("")
+      <div class="lower"><div class="attrs">${c.attrs.length ? c.attrs.map(a => `<div title="${ATTR_HELP[a.lab] || ""}"><b>${rate(a.p)}</b><span>${a.lab}</span></div>`).join("")
         : `<div style="grid-column:1/-1;justify-content:center;font-size:.8em">Not enough snaps to rate</div>`}</div>
-      <div class="bio">${esc(bio)}${p.college ? "<br>" + esc(p.college) : ""}</div>
+      <div class="bio">${esc(bio)}${p.college ? "<br>" + esc(p.college) : ""}</div></div>
     </div>
     <div class="shine"></div>
   </div>`;
@@ -510,10 +573,12 @@ async function getFilm(team) {
 async function loadPlay(p, q) {
   cancelAnimationFrame(anim.raf);
   let F;
-  try { F = (await getFilm(p.team))[q.key]; } catch (e) { F = null; }
+  try { F = (await getFilm(p.team)).frames[q.key]; } catch (e) { F = null; }
   if (state.player !== p.id) return;
   if (!F) { $("#clock").textContent = "film unavailable"; return; }
-  const frames = F.frames.map(f => ({ t: f[0] / 10, pos: new Map(f.slice(1).map(([id, x, y]) => [id, [x, y]])) }));
+  const frames = F.frames.map(f => { const pos = new Map();
+    F.ids.forEach((id, i) => { const x = f[1 + 2 * i], y = f[2 + 2 * i]; if (x >= 0) pos.set(id, [x / 10, y / 10]); });
+    return { t: f[0] / 10, pos }; });
   const end = frames[frames.length - 1].t, keyT = F.key / 10;
   let xmin = 1e9, xmax = -1e9;
   frames.forEach(f => f.pos.forEach(([x], id) => { if (id) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); } }));
