@@ -4,7 +4,7 @@ Good receivers can win a play without touching the ball by pulling defenders awa
 
 By evaluating defender spacing from the moment the ball is snapped until it is thrown, our model calculates the exact amount of open grass created for teammates. This proves that pulling defenders away on deep routes directly drives higher offensive success rates for the entire team. Our project pairs a Python data pipeline with an interactive 2D web application (`app/index.html` and `app_profiles/index.html`) so coaches and fans can replay animated plays and explore league-wide player leaderboards.
 
-**Live demo:** https://temporary-spry-sable-dmgxyf7.vercel.app/#p41282
+**Live demo:** https://decoy-route-analytics.vercel.app/#p41282
 
 ![Davante Adams, week 2 vs DET, Q4 3:21 — at the throw he has lured two Lions defenders (A.J. Parker, Tracy Walker) inside his 5-yard zone while the ball goes deep to Marquez Valdes-Scantling](docs/media/decoy_play.gif)
 
