@@ -31,7 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "out")
 
 ATTACH_YDS = 5.0          # close-cover radius; also the teammate zone and the "on the target" radius
-BAIT_MAX_YDS = 12.0       # a baited defender can be up to this far from the decoy at the throw
+BAIT_CLOSE_YDS = 7.0      # a defender assigned to the decoy and this close at the throw is baited outright
+BAIT_MAX_YDS = 15.0       # a baited defender can be up to this far from the decoy at the throw
 BAIT_WINDOW = 15          # frames before the throw used to judge baiting (1.5 s at 10 Hz)
 PURSUIT_BASE = 0.25       # pursuit (cosine) needed just outside the close-cover radius ...
 PURSUIT_PER_YD = 0.03     # ... rising this much per extra yard: farther defenders need clearer chasing
@@ -126,10 +127,10 @@ def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_
     A defender is baited when all hold:
       1. responsibility — of all route runners, the decoy is the one he stayed closest to on
          average over the window (so he is not credited to the wrong receiver);
-      2. within BAIT_MAX_YDS of the decoy at the throw;
-      3. tight (inside ATTACH_YDS at the throw) OR pursuing: averaged over frames where he is
-         moving, his velocity points at the decoy or mirrors the decoy's velocity, with the bar
-         rising with distance: cosine >= 0.25 + 0.03 per yard beyond 5 (0.32 at 7 yd, 0.46 at 12);
+      2. within BAIT_MAX_YDS (15) of the decoy at the throw;
+      3. close (inside BAIT_CLOSE_YDS, 7, at the throw) OR pursuing: averaged over frames where he
+         is moving, his velocity points at the decoy or mirrors the decoy's velocity, with the bar
+         rising with distance: cosine >= 0.25 + 0.03 per yard beyond 7 (0.31 at 9 yd, 0.49 at 15);
       4. not within ATTACH_YDS of the target at the throw (then he is covering the target).
     """
     D = paths.get(decoy)
@@ -149,7 +150,7 @@ def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_
         d_now = float(np.hypot(cx - dx, cy - dy))
         if d_now >= BAIT_MAX_YDS:
             continue
-        if d_now < ATTACH_YDS:
+        if d_now < BAIT_CLOSE_YDS:
             out.append(c)
             continue
         vC = np.diff(C, axis=0) / 0.1
@@ -158,7 +159,7 @@ def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_
         cos_at = (vC * to_D).sum(1) / (sp_c * np.hypot(*to_D.T) + 1e-9)
         cos_mirror = np.where(sp_d > 1, (vC * vD).sum(1) / (sp_c * sp_d + 1e-9), -1)
         moving = sp_c > 1
-        need = PURSUIT_BASE + PURSUIT_PER_YD * (d_now - ATTACH_YDS)
+        need = PURSUIT_BASE + PURSUIT_PER_YD * (d_now - BAIT_CLOSE_YDS)
         if moving.sum() >= 3 and np.nanmean(np.maximum(cos_at, cos_mirror)[moving]) >= need:
             out.append(c)
     return out
