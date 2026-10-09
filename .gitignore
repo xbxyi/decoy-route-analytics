@@ -1,0 +1,11 @@
+# dataset (clone separately into data/)
+data/
+out/
+__pycache__/
+*.pyc
+.venv/
+*.csv
+*.parquet
+# generated app data — rebuild with the scripts in src/
+app/*.json
+app_profiles/*.json

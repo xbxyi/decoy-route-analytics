@@ -1,0 +1,512 @@
+<title>Decoy Efficiency Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700;800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: broadcast field — narrow leaderboard rail left, wide film panel right, findings below in an offset two-up. */
+:root {
+  --bg: #eaefeb;          /* cool chalk-green ground */
+  --surface: #f7f9f7;
+  --ink: #122019;
+  --muted: #56665d;
+  --rule: #c9d4cd;
+  --pylon: #c94a0c;       /* end-zone pylon orange, text-safe */
+  --pylon-fill: #ff6a13;
+  --tv-yellow: #f2c500;   /* broadcast first-down line */
+  --turf: #2c6643;
+  --turf-dark: #275b3c;
+  --chalk: rgba(255,255,255,.55);
+  --off: #f3f6f3;
+  --def: #17233d;
+  --good: #2a7a4b;
+  --bad: #a8402a;
+  --tint: rgba(201,74,12,.09);
+  --f-display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1511; --surface: #151f19; --ink: #e3ebe6; --muted: #8fa198; --rule: #26342c;
+    --pylon: #ff8a45; --pylon-fill: #ff6a13; --tv-yellow: #f5cc1a;
+    --turf: #1f4a31; --turf-dark: #1b422b; --chalk: rgba(255,255,255,.4);
+    --off: #e9efea; --def: #0b1222; --good: #5fc489; --bad: #ef8a6f; --tint: rgba(255,138,69,.12);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1511; --surface: #151f19; --ink: #e3ebe6; --muted: #8fa198; --rule: #26342c;
+  --pylon: #ff8a45; --pylon-fill: #ff6a13; --tv-yellow: #f5cc1a;
+  --turf: #1f4a31; --turf-dark: #1b422b; --chalk: rgba(255,255,255,.4);
+  --off: #e9efea; --def: #0b1222; --good: #5fc489; --bad: #ef8a6f; --tint: rgba(255,138,69,.12);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--f-body);
+  padding-inline: clamp(16px, 4vw, 48px); padding-block: 28px 64px;
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.02; }
+.num, td.n, .mono { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.eyebrow { font: 600 11px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--pylon); outline-offset: 2px; }
+
+/* masthead: offset, left-heavy */
+header.mast { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px 48px; align-items: end; }
+header.mast h1 { font-size: clamp(44px, 7vw, 88px); font-weight: 800; letter-spacing: -.01em; text-transform: uppercase; }
+header.mast h1 span { color: var(--pylon); }
+header.mast .dek { max-width: 58ch; margin-top: 14px; font-size: 17px; color: var(--ink); }
+header.mast .source { font-size: 13px; color: var(--muted); border-left: 1px solid var(--rule); padding-left: 18px; }
+header.mast .source b { color: var(--ink); font-weight: 600; }
+
+/* main split */
+.split { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 32px; align-items: start; }
+
+/* leaderboard rail */
+.rail { display: grid; gap: 12px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { border: 1px solid var(--rule); background: transparent; padding: 5px 11px; border-radius: 3px; cursor: pointer; font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+#q { flex: 1 1 140px; min-width: 0; border: 1px solid var(--rule); background: var(--surface); padding: 6px 10px; border-radius: 3px; font-size: 14px; }
+#sort, #team { border: 1px solid var(--rule); background: var(--surface); padding: 6px 8px; border-radius: 3px; font-size: 13px; }
+.board { max-height: min(72vh, 820px); overflow-y: auto; border-top: 2px solid var(--ink); }
+.board ol { list-style: none; margin: 0; padding: 0; }
+.row { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) 4.2em 3.6em; gap: 8px; align-items: center;
+       padding: 9px 6px; border-bottom: 1px solid var(--rule); cursor: pointer; width: 100%; text-align: left; background: none; border-inline: 0; border-top: 0; }
+.row:hover { background: var(--tint); }
+.row[aria-current="true"] { background: var(--tint); }
+.row[aria-current="true"] .nm { color: var(--pylon); }
+.row .rk { font: 500 13px var(--f-data); color: var(--muted); }
+.row .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .meta { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+.row .v { font: 500 13px var(--f-data); text-align: right; }
+.row .goe { font: 500 13px var(--f-data); text-align: right; }
+.goe.pos { color: var(--good); } .goe.neg { color: var(--bad); }
+.boardhead { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) 4.2em 3.6em; gap: 8px; padding: 0 6px; }
+.boardhead span { font: 600 10px/1.2 var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.boardhead span:nth-child(n+3) { text-align: right; }
+
+/* film panel */
+.panel { display: grid; gap: 22px; min-width: 0; }
+.who { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: end; }
+.who h2 { font-size: clamp(34px, 5vw, 56px); font-weight: 800; text-transform: uppercase; }
+.who .tag { font: 600 14px var(--f-body); color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.who .rankbig { font: 800 clamp(40px, 6vw, 72px)/0.9 var(--f-display); color: var(--pylon); text-align: right; }
+.who .rankbig small { display: block; font: 600 11px var(--f-body); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+.lede { font-size: 18px; max-width: 62ch; margin: 0; }
+.lede b { font-family: var(--f-data); font-weight: 500; }
+.figs { display: flex; flex-wrap: wrap; gap: 10px 32px; border-block: 1px solid var(--rule); padding-block: 12px; }
+.fig { display: grid; gap: 2px; }
+.fig .num { font-size: 22px; font-weight: 500; }
+.fig .lab { font-size: 12px; color: var(--muted); }
+
+.film { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.fieldbox { display: grid; gap: 10px; min-width: 0; }
+.canvaswrap { background: var(--turf-dark); border-radius: 4px; overflow: hidden; display: flex; justify-content: center; }
+canvas { display: block; max-width: 100%; }
+.transport { display: flex; gap: 10px; align-items: center; }
+.transport button { border: 1px solid var(--rule); background: var(--surface); border-radius: 3px; padding: 5px 12px; cursor: pointer; font-weight: 600; font-size: 13px; min-width: 70px; }
+.transport input[type=range] { flex: 1; min-width: 0; accent-color: var(--pylon-fill); }
+.transport .clock { font: 500 13px var(--f-data); min-width: 5.5em; text-align: right; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.plays { display: grid; gap: 0; border-top: 2px solid var(--ink); }
+.play { text-align: left; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 12px 4px; cursor: pointer; display: grid; gap: 4px; }
+.play:hover { background: var(--tint); }
+.play[aria-current="true"] { background: var(--tint); }
+.play .ph { font: 600 12px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.play[aria-current="true"] .ph { color: var(--pylon); }
+.play .pd { font-size: 14px; }
+.play .pa { font-size: 13px; color: var(--muted); }
+.play .pa b { color: var(--ink); font-weight: 600; }
+
+/* findings */
+.findings { display: grid; gap: 28px; border-top: 2px solid var(--ink); padding-top: 28px; }
+.findings > h2 { font-size: clamp(30px, 4vw, 44px); text-transform: uppercase; font-weight: 800; }
+.fgrid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 36px 56px; }
+.finding { display: grid; gap: 10px; align-content: start; }
+.finding h3 { font-size: 24px; font-weight: 700; }
+.finding p { margin: 0; max-width: 62ch; color: var(--ink); }
+.finding .note { font-size: 13px; color: var(--muted); }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font: 600 11px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--ink); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--rule); }
+td.n, th.n { text-align: right; }
+.bar { display: inline-block; height: 8px; background: var(--muted); vertical-align: middle; border-radius: 1px; }
+.bar.hi { background: var(--pylon-fill); }
+.method { font-size: 14px; color: var(--muted); max-width: 80ch; display: grid; gap: 8px; }
+.method b { color: var(--ink); }
+.loading { color: var(--muted); padding: 40px 0; }
+
+@media (max-width: 980px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; }
+  .board { max-height: 380px; }
+  .film { grid-template-columns: minmax(0, 1fr); }
+  .fgrid { grid-template-columns: minmax(0, 1fr); }
+  header.mast { grid-template-columns: minmax(0, 1fr); }
+  header.mast .source { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule); padding-top: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <div class="eyebrow">Big Data Bowl tracking · 2021 regular season</div>
+      <h1>Decoy <span>Efficiency</span> Index</h1>
+      <p class="dek">On most pass plays, three or four receivers run routes and one gets the ball. This index measures what the other routes did: how many coverage defenders were within 5 yards of each non-targeted receiver at the moment of the throw, compared with how many a route from that spot would normally attract.</p>
+    </div>
+    <div class="source" id="source">Loading tracking summary…</div>
+  </header>
+
+  <section class="split">
+    <aside class="rail" aria-label="Leaderboard">
+      <div class="controls" role="group" aria-label="Position">
+        <button class="chip" data-pos="ALL" aria-pressed="true">All</button>
+        <button class="chip" data-pos="WR" aria-pressed="false">WR</button>
+        <button class="chip" data-pos="TE" aria-pressed="false">TE</button>
+        <button class="chip" data-pos="RB" aria-pressed="false">RB</button>
+      </div>
+      <div class="controls">
+        <input id="q" type="search" placeholder="Find a player or team" aria-label="Find a player or team">
+        <select id="team" aria-label="Team">
+          <option value="ALL">All teams</option>
+        </select>
+        <select id="sort" aria-label="Sort by">
+          <option value="goe">Over expected</option>
+          <option value="drawn">Defenders drawn</option>
+          <option value="multi_rate">Drew 2+ rate</option>
+        </select>
+      </div>
+      <div class="boardhead"><span>#</span><span>Player</span><span>Drawn</span><span>vs exp</span></div>
+      <div class="board"><ol id="board"></ol></div>
+    </aside>
+
+    <article class="panel" id="panel">
+      <div class="loading">Loading 26,000 decoy routes…</div>
+    </article>
+  </section>
+
+  <section class="findings" id="findings"></section>
+</div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const fmt = (v, d = 2) => (v == null || isNaN(v)) ? "–" : v.toFixed(d);
+const sgn = (v, d = 2) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
+const pct = v => Math.round(v * 100) + "%";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const RES = { C: "complete", I: "incomplete", IN: "intercepted" };
+const short = n => { const p = String(n || "").split(" "); return p.length > 1 ? p[0][0] + ". " + p.slice(1).join(" ") : n; };
+
+let D, state = { pos: "ALL", team: "ALL", q: "", sort: "goe", player: null, play: null };
+try { const s = JSON.parse(localStorage.getItem("decoy-ui") || "{}"); Object.assign(state, { pos: s.pos || "ALL", team: s.team || "ALL", sort: s.sort || "goe" }); } catch (e) {}
+const save = () => { try { localStorage.setItem("decoy-ui", JSON.stringify({ pos: state.pos, team: state.team, sort: state.sort })); } catch (e) {} };
+
+fetch("decoy.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(init).catch(err => {
+  $("#panel").innerHTML = `<p class="loading">Couldn't load decoy.json (${esc(err.message)}). Serve the app folder over HTTP: <span class="mono">cd app && python -m http.server 8000</span>.</p>`;
+});
+
+function init(data) {
+  D = data;
+  const m = D.meta;
+  $("#source").innerHTML = `<b>${m.games} games</b>, weeks ${m.weeks} of ${m.season}.<br><b>${m.throws.toLocaleString()}</b> targeted throws, <b>${m.decoy_routes.toLocaleString()}</b> decoy routes.<br>${m.qualified} players with ${m.min_decoys}+ decoy routes are ranked.`;
+  document.querySelectorAll(".chip").forEach(b => {
+    b.setAttribute("aria-pressed", b.dataset.pos === state.pos);
+    b.onclick = () => { state.pos = b.dataset.pos; document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b)); save(); renderBoard(); };
+  });
+  const teams = [...new Set(D.players.map(p => p.team))].sort();
+  $("#team").insertAdjacentHTML("beforeend", teams.map(t => `<option value="${t}">${t} (${D.players.filter(p => p.team === t).length})</option>`).join(""));
+  if (!teams.includes(state.team)) state.team = "ALL";
+  $("#team").value = state.team;
+  $("#team").onchange = e => { state.team = e.target.value; save(); renderBoard(); };
+  $("#sort").value = state.sort;
+  $("#sort").onchange = e => { state.sort = e.target.value; save(); renderBoard(); };
+  $("#q").oninput = e => { state.q = e.target.value.toLowerCase(); renderBoard(); };
+  const h = location.hash.match(/^#p(\d+)$/);
+  const start = (h && D.players.find(p => p.id == h[1])) || D.players[0];
+  renderBoard();
+  selectPlayer(start.id, false);
+  renderFindings();
+}
+
+function visible() {
+  let list = D.players.filter(p => state.pos === "ALL" || p.pos === state.pos || (state.pos === "RB" && p.pos === "FB"));
+  if (state.team !== "ALL") list = list.filter(p => p.team === state.team);
+  if (state.q) list = list.filter(p => (p.name + " " + p.team).toLowerCase().includes(state.q));
+  return list.slice().sort((a, b) => b[state.sort] - a[state.sort]);
+}
+
+function renderBoard() {
+  const list = visible();
+  $("#board").innerHTML = list.map((p, i) => `
+    <li><button class="row" data-id="${p.id}" aria-current="${p.id === state.player}">
+      <span class="rk">${i + 1}</span>
+      <span class="nm">${esc(p.name)}<span class="meta">${p.pos} · ${p.team} · ${p.decoys} decoy routes</span></span>
+      <span class="v">${state.sort === "multi_rate" ? pct(p.multi_rate) : fmt(p.drawn)}</span>
+      <span class="goe ${p.goe >= 0 ? "pos" : "neg"}">${sgn(p.goe)}</span>
+    </button></li>`).join("") || `<li class="loading">No ${state.pos === "ALL" ? "" : state.pos + " "}player${state.team === "ALL" ? "" : " on " + state.team} matches${state.q ? " “" + esc(state.q) + "”" : " these filters"}.</li>`;
+  $("#board").querySelectorAll(".row").forEach(b => b.onclick = () => selectPlayer(+b.dataset.id, true));
+}
+
+function selectPlayer(id, scroll) {
+  const p = D.players.find(x => x.id === id);
+  state.player = id;
+  document.querySelectorAll(".row").forEach(r => r.setAttribute("aria-current", +r.dataset.id === id));
+  try { history.replaceState(null, "", "#p" + id); } catch (e) {}
+  const best = p.plays[0];
+  const diff = p.drawn - p.expected;
+  $("#panel").innerHTML = `
+    <div class="who">
+      <div>
+        <div class="tag">${p.pos} · ${p.team} · ${Math.round(p.man_share * 100)}% of decoy routes vs man</div>
+        <h2>${esc(p.name)}</h2>
+      </div>
+      <div class="rankbig">${p.rank}<small>of ${D.players.length} by over-expected</small></div>
+    </div>
+    <p class="lede">Across <b>${p.decoys}</b> routes where the ball went elsewhere, ${esc(p.name.split(" ").slice(-1)[0])} had <b>${fmt(p.drawn)}</b> coverage defenders within 5 yards at the throw. Routes from the same spots, against the same coverage shell, average <b>${fmt(p.expected)}</b>. That is <b>${sgn(diff)}</b> defenders per route, ${diff >= 0 ? "more" : "fewer"} than expected.</p>
+    <div class="figs">
+      <div class="fig"><span class="num">${pct(p.multi_rate)}</span><span class="lab">routes with 2+ defenders on him (${p.multi_n})</span></div>
+      <div class="fig"><span class="num">${fmt(p.drag, 1)} yd</span><span class="lab">coverage dragged off target per route</span></div>
+      <div class="fig"><span class="num">${fmt(p.raw, 1)}</span><span class="lab">brief's raw score (defenders × yds from target)</span></div>
+    </div>
+    ${p.plays.length ? `
+    <div class="film">
+      <div class="fieldbox">
+        <div class="canvaswrap"><canvas id="field" role="img" aria-label="Animated overhead view of the selected play"></canvas></div>
+        <div class="transport">
+          <button id="playbtn" type="button">Pause</button>
+          <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Play timeline">
+          <span class="clock" id="clock">0.0 s</span>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))} (decoy)</span>
+          <span><i style="background:var(--tv-yellow)"></i>Target</span>
+          <span><i style="background:var(--off)"></i>Offense</span>
+          <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span>
+        </div>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:8px">His biggest decoy reps</div>
+        <div class="plays" id="plays">${p.plays.map((q, i) => `
+          <button class="play" data-i="${i}" aria-current="${i === 0}">
+            <span class="ph">Wk ${q.week} · ${q.off} vs ${q.dff} · Q${q.q} ${esc(q.clock)} · ${q.down}&amp;${q.togo} · ${esc(q.coverage || q.ctype || "")}</span>
+            <span class="pa"><b>${q.attached} defender${q.attached === 1 ? "" : "s"} on him</b> (${esc(q.attachedNames.map(short).join(", "))}). Ball went to ${esc(short(q.targetName))}: ${RES[q.result] || q.result}${q.result === "C" ? ", " + q.yds + " yds" : ""}.</span>
+            <span class="pd">${esc(q.desc.replace(/^\([^)]*\)\s*/, "").slice(0, 170))}</span>
+          </button>`).join("")}
+        </div>
+      </div>
+    </div>` : `<p class="loading">No showcase plays for this player.</p>`}`;
+  if (p.plays.length) {
+    $("#plays").querySelectorAll(".play").forEach(b => b.onclick = () => {
+      $("#plays").querySelectorAll(".play").forEach(x => x.setAttribute("aria-current", x === b));
+      loadPlay(p, p.plays[+b.dataset.i]);
+    });
+    loadPlay(p, best);
+  }
+  if (scroll && window.matchMedia("(max-width: 980px)").matches) $("#panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ───────── field animation ───────── */
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let anim = { raf: 0, t: 0, playing: true, last: 0 };
+
+function loadPlay(p, q) {
+  cancelAnimationFrame(anim.raf);
+  const F = D.frames[q.key];
+  const frames = F.frames.map(f => ({ t: f[0] / 10, pos: new Map(f.slice(1).map(([id, x, y]) => [id, [x, y]])) }));
+  const end = frames[frames.length - 1].t, throwT = F.throw / 10;
+  let xmin = 1e9, xmax = -1e9;
+  frames.forEach(f => f.pos.forEach(([x], id) => { if (id) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); } }));
+  const los = (frames[0].pos.get(0) || [xmin + 8])[0];
+  const play = { p, q, F, frames, end, throwT, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0),
+                 att: new Set(q.attachedIds) };
+  anim = { raf: 0, t: reduce ? throwT : 0, playing: !reduce, last: 0, play };
+  $("#playbtn").textContent = anim.playing ? "Pause" : "Play";
+  $("#playbtn").onclick = () => {
+    if (!anim.playing && anim.t >= end) anim.t = 0;
+    anim.playing = !anim.playing; $("#playbtn").textContent = anim.playing ? "Pause" : "Play"; anim.last = 0; tick();
+  };
+  $("#scrub").oninput = e => { anim.t = (+e.target.value / 1000) * end; anim.playing = false; $("#playbtn").textContent = "Play"; draw(); };
+  sizeCanvas(); tick();
+}
+
+function sizeCanvas() {
+  const c = $("#field"); if (!c || !anim.play) return;
+  const wrap = c.parentElement, W = wrap.clientWidth;
+  const len = anim.play.x1 - anim.play.x0;
+  let h = W * len / 53.3, w = W;
+  const cap = Math.min(window.innerHeight * 0.72, 680);
+  if (h > cap) { w = W * cap / h; h = cap; }
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  c.style.width = w + "px"; c.style.height = h + "px";
+  anim.dpr = dpr; draw();
+}
+
+function tick(ts) {
+  if (anim.playing) {
+    if (ts && anim.last) anim.t += (ts - anim.last) / 1000;
+    anim.last = ts || 0;
+    if (anim.t >= anim.play.end) {
+      anim.t = anim.play.end; anim.playing = false; $("#playbtn").textContent = "Replay";
+    }
+    anim.raf = requestAnimationFrame(tick);
+  }
+  draw();
+}
+
+function posAt(t) {
+  const fr = anim.play.frames;
+  let i = fr.findIndex(f => f.t > t);
+  if (i === -1) return fr[fr.length - 1].pos;
+  if (i === 0) return fr[0].pos;
+  const a = fr[i - 1], b = fr[i], k = (t - a.t) / (b.t - a.t), out = new Map();
+  a.pos.forEach((pa, id) => { const pb = b.pos.get(id) || pa; out.set(id, [pa[0] + (pb[0] - pa[0]) * k, pa[1] + (pb[1] - pa[1]) * k]); });
+  return out;
+}
+
+function draw() {
+  const c = $("#field"); if (!c || !anim.play) return;
+  const g = c.getContext("2d"), P = anim.play, css = getComputedStyle(document.documentElement);
+  const tok = n => css.getPropertyValue(n).trim();
+  const W = c.width, H = c.height, s = W / 53.3, dpr = anim.dpr || 1;
+  const X = y => y * s, Y = x => (P.x1 - x) * s;
+  g.clearRect(0, 0, W, H);
+  // turf with 5-yard mowing stripes
+  for (let x = Math.floor(P.x0 / 5) * 5; x < P.x1; x += 5) {
+    g.fillStyle = (Math.floor(x / 5) % 2) ? tok("--turf") : tok("--turf-dark");
+    g.fillRect(0, Y(x + 5), W, 5 * s);
+  }
+  g.strokeStyle = tok("--chalk"); g.fillStyle = tok("--chalk");
+  g.lineWidth = Math.max(1, s * 0.12);
+  g.font = `600 ${Math.max(10, s * 1.6)}px ${tok("--f-display")}`; g.textAlign = "center"; g.textBaseline = "middle";
+  for (let x = Math.ceil(P.x0); x <= P.x1; x++) {
+    const yl = x - 10;
+    if (yl < 0 || yl > 100) continue;
+    if (x % 5 === 0) { g.beginPath(); g.moveTo(0, Y(x)); g.lineTo(W, Y(x)); g.stroke(); }
+    else { [1, 23.58, 29.75, 52.3].forEach(h => { g.beginPath(); g.moveTo(X(h - .5), Y(x)); g.lineTo(X(h + .5), Y(x)); g.stroke(); }); }
+    if (x % 10 === 0 && yl > 0 && yl < 100) {
+      const lab = String(50 - Math.abs(50 - yl));
+      g.fillText(lab, X(7), Y(x)); g.fillText(lab, X(46.3), Y(x));
+    }
+  }
+  // line of scrimmage + broadcast first-down line
+  g.lineWidth = Math.max(2, s * .3);
+  g.strokeStyle = "rgba(90,150,255,.85)"; g.beginPath(); g.moveTo(0, Y(P.los)); g.lineTo(W, Y(P.los)); g.stroke();
+  if (P.q.togo && P.fd < P.x1) { g.strokeStyle = tok("--tv-yellow"); g.beginPath(); g.moveTo(0, Y(P.fd)); g.lineTo(W, Y(P.fd)); g.stroke(); }
+
+  const pos = posAt(anim.t), atThrow = anim.t >= P.throwT - 0.05, roles = P.F.roles;
+  const me = P.p.id, tgt = P.q.target, r = Math.max(4, s * 0.85) ;
+  const mp = pos.get(me);
+  // 5-yard attach radius around the decoy
+  if (mp) {
+    g.beginPath(); g.arc(X(mp[1]), Y(mp[0]), 5 * s, 0, Math.PI * 2);
+    g.fillStyle = atThrow ? "rgba(255,106,19,.20)" : "rgba(255,106,19,.08)"; g.fill();
+    g.setLineDash([4 * dpr, 4 * dpr]); g.strokeStyle = tok("--pylon-fill"); g.lineWidth = 1.5 * dpr; g.stroke(); g.setLineDash([]);
+  }
+  // at the throw: tether attached defenders to the decoy
+  if (atThrow && mp) {
+    g.strokeStyle = tok("--pylon-fill"); g.lineWidth = 2 * dpr;
+    P.att.forEach(id => { const d = pos.get(id); if (d) { g.beginPath(); g.moveTo(X(mp[1]), Y(mp[0])); g.lineTo(X(d[1]), Y(d[0])); g.stroke(); } });
+  }
+  // players
+  pos.forEach(([x, y], id) => {
+    if (!id) return;
+    const role = roles[id] || "";
+    const def = role === "coverage" || role === "rush";
+    g.beginPath(); g.arc(X(y), Y(x), r, 0, Math.PI * 2);
+    g.fillStyle = id === me ? tok("--pylon-fill") : id === tgt ? tok("--tv-yellow") : def ? tok("--def") : tok("--off");
+    g.fill();
+    g.lineWidth = 1.5 * dpr;
+    g.strokeStyle = def ? (P.att.has(id) && atThrow ? tok("--pylon-fill") : "rgba(255,255,255,.7)") : "rgba(0,0,0,.45)";
+    if (P.att.has(id) && atThrow) g.lineWidth = 2.5 * dpr;
+    g.stroke();
+  });
+  // ball
+  const b = pos.get(0);
+  if (b) { g.beginPath(); g.ellipse(X(b[1]), Y(b[0]), r * .55, r * .38, 0, 0, Math.PI * 2); g.fillStyle = "#7a4a22"; g.fill(); g.strokeStyle = "#fff"; g.lineWidth = 1 * dpr; g.stroke(); }
+  // labels
+  g.font = `600 ${Math.max(11 * dpr, s * 1.25)}px ${tok("--f-body")}`; g.textAlign = "left"; g.textBaseline = "middle";
+  const label = (id, txt, col) => { const p = pos.get(id); if (!p) return; const tx = X(p[1]) + r + 4 * dpr, ty = Y(p[0]);
+    g.lineWidth = 3 * dpr; g.strokeStyle = "rgba(0,0,0,.6)"; g.strokeText(txt, tx, ty); g.fillStyle = col; g.fillText(txt, tx, ty); };
+  label(me, short(P.p.name), "#fff");
+  label(tgt, short(P.q.targetName) + " · target", tok("--tv-yellow"));
+  if (atThrow) {
+    g.font = `800 ${Math.max(14 * dpr, s * 2.2)}px ${tok("--f-display")}`; g.textAlign = "left"; g.textBaseline = "top";
+    g.fillStyle = "#fff"; g.fillText(`THROW · ${P.att.size} ON ${short(P.p.name).toUpperCase()}`, 8 * dpr, 8 * dpr);
+  }
+  $("#clock").textContent = `${anim.t.toFixed(1)} s${atThrow ? " · throw" : ""}`;
+  $("#scrub").value = Math.round(anim.t / P.end * 1000);
+}
+
+window.addEventListener("resize", () => { clearTimeout(window._rs); window._rs = setTimeout(sizeCanvas, 120); });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+/* ───────── findings ───────── */
+function renderFindings() {
+  const V = D.validation, R = D.reliability, S = D.sensitivity;
+  const maxC = Math.max(...V.bands.flatMap(b => [b.comp_top, b.comp_bot]));
+  const bar = (v, hi) => `<span class="bar ${hi ? "hi" : ""}" style="width:${Math.round(v / maxC * 70)}px"></span>`;
+  $("#findings").innerHTML = `
+    <h2>What the tracking data says</h2>
+    <div class="fgrid">
+      <div class="finding">
+        <div class="eyebrow">Finding 1</div>
+        <h3>The formula as briefed rewards throw depth, not deception</h3>
+        <p>The brief's score is defenders near a decoy multiplied by their distance from the target. On deep throws everyone is far from the target, so the score rises with throw depth whether or not anyone was fooled. Within each depth band, plays with the highest raw scores completed less often than plays with the lowest.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Throw depth</th><th class="n">Plays</th><th>Completion, top 20% raw score</th><th>Bottom 20%</th></tr></thead>
+          <tbody>${V.bands.map(b => `<tr><td>${esc(b.band)}</td><td class="n">${b.n.toLocaleString()}</td>
+            <td class="n">${bar(b.comp_top, true)} ${pct(b.comp_top)}</td><td class="n">${bar(b.comp_bot)} ${pct(b.comp_bot)}</td></tr>`).join("")}</tbody>
+        </table></div>
+        <p class="note">This is why the ranking uses defenders drawn compared with an expectation model, and keeps the raw score only as a reference column.</p>
+      </div>
+      <div class="finding">
+        <div class="eyebrow">Finding 2</div>
+        <h3>Drawing defenders is a repeatable trait</h3>
+        <p>Splitting the season into odd and even weeks, a receiver's defenders-drawn rate in one half predicts the other at <b class="mono">r = ${fmt(R.attached)}</b>. Most of that comes from where he lines up. Once alignment, depth, coverage shell and position are accounted for, the remaining skill part holds at <b class="mono">r = ${fmt(R.goe)}</b>. It is real, but only eight weeks of data separate the top 20 from the middle of the board.</p>
+      </div>
+      <div class="finding">
+        <div class="eyebrow">Finding 3</div>
+        <h3>Defenders on decoys did not buy the target extra space</h3>
+        <p>Comparing plays with the same number of coverage defenders, route runners and throw depth, more defenders on decoys went with a slightly <em>tighter</em> target window, not a wider one. A likely reason is that defenses playing tight on decoys are usually playing tight on everyone.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Measure</th><th class="n">r with target separation</th><th class="n">r with completion</th></tr></thead>
+          <tbody>
+            <tr><td>Raw score (brief)</td><td class="n">${sgn(V.r_sep.raw)}</td><td class="n">${sgn(V.r_comp.raw)}</td></tr>
+            <tr><td>Defenders drawn</td><td class="n">${sgn(V.r_sep.attached)}</td><td class="n">${sgn(V.r_comp.attached)}</td></tr>
+            <tr><td>Drawn over expected</td><td class="n">${sgn(V.r_sep.goe)}</td><td class="n">${sgn(V.r_comp.goe)}</td></tr>
+            <tr><td>Yards dragged off target</td><td class="n">${sgn(V.r_sep.drag)}</td><td class="n">${sgn(V.r_comp.drag)}</td></tr>
+          </tbody>
+        </table></div>
+        <p class="note">${V.plays.toLocaleString()} plays. Separation is the nearest coverage defender to the target at the throw.</p>
+      </div>
+      <div class="finding">
+        <div class="eyebrow">Threshold check</div>
+        <h3>The 5-yard radius is a choice</h3>
+        <p>Re-scoring every route at 3 and 7 yards changes how many defenders count, but mostly keeps the same players near the top.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Radius</th><th class="n">Avg defenders drawn</th><th class="n">Rank correlation with 5 yd</th></tr></thead>
+          <tbody>${S.map(x => `<tr><td>${x.radius} yd${x.radius === 5 ? " (used)" : ""}</td><td class="n">${fmt(x.mean)}</td><td class="n">${fmt(x.rank_corr_vs_5)}</td></tr>`).join("")}</tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="method">
+      <div class="eyebrow">How it is measured</div>
+      <p><b>Target.</b> Parsed from the play-by-play ("pass short left to M.Evans") and matched to a route runner on that play. Throwaways and sacks have no target and are left out.</p>
+      <p><b>Decoy.</b> Every other player PFF charted as running a route. Positions are frozen at the pass_forward frame, with plays standardized so the offense always moves the same way.</p>
+      <p><b>Drawn.</b> Coverage defenders within ${D.meta.attach_yds} yards of the decoy. Defenders also within ${D.meta.attach_yds} yards of the target are not counted, because they were not pulled away.</p>
+      <p><b>Expected.</b> A gradient-boosted model of defenders drawn from depth, width, distance to target, coverage defenders, route runners, man or zone, and position. It is trained on odd weeks to score even weeks and the reverse, so no route grades itself.</p>
+      <p><b>Dragged.</b> For each drawn defender, how many yards farther from the target he ended up at the throw than at the snap.</p>
+    </div>`;
+}
+</script>
