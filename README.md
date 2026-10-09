@@ -12,3 +12,6 @@ npx vercel deploy ../site --prod        # after `npx vercel login`; or --tempora
 ```
 
 How the numbers are computed: [DECOY_MATH.md](DECOY_MATH.md).
+
+
+https://snappy-khaki-07k1yox.vercel.app/#p37139
