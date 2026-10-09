@@ -31,8 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "out")
 
 ATTACH_YDS = 5.0          # close-cover radius; also the teammate zone and the "on the target" radius
-BAIT_CLOSE_YDS = 7.0      # a defender assigned to the decoy and this close at the throw is baited outright
-BAIT_MAX_YDS = 15.0       # a baited defender can be up to this far from the decoy at the throw
+BAIT_CLOSE_YDS = 5.0      # a defender assigned to the decoy and this close at the throw is baited
+BAIT_MAX_YDS = 5.0        # no long-range pursuit credit: precision over coverage (set > 5 to re-enable)
 BAIT_WINDOW = 15          # frames before the throw used to judge baiting (1.5 s at 10 Hz)
 PURSUIT_BASE = 0.25       # pursuit (cosine) needed just outside the close-cover radius ...
 PURSUIT_PER_YD = 0.03     # ... rising this much per extra yard: farther defenders need clearer chasing

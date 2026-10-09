@@ -549,7 +549,7 @@ function renderMatches(p, plays) {
   const best = plays.filter(q => q.best);
   const what = "real decoy plays";
   const items = [{ week: null, label: `Season best · his top ${best.length} ${what}, weeks 1–8`,
-                   sub: "2+ defenders on him at the throw, pulled away from the target · ranked by decoy score", plays: best }]
+                   sub: "", plays: best }]
     .concat(games.map(g => ({ week: g.week,
       label: `Week ${g.week} · ${niceDate(g.date)} · ${TEAM_NAMES[p.team] || p.team} vs ${TEAM_NAMES[g.opp] || g.opp}`,
       sub: `${g.home ? "Home" : "Away"} · ${g.lines.join(" · ")}`,
@@ -596,7 +596,7 @@ function decoyHTML(p) {
     <div class="pcts">${bars.length ? bars.map(([k, lab]) => { const v = d["p_" + k]; return `<div class="pct"><span>${lab}</span>
       <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${ordinal(v)}</span></div>`; }).join("")
       + `<p class="pnote">Percentile among decoys with ${D.meta.decoy_qualify || 40}+ decoy routes.</p>`
-      : `<p class="pnote">Needs ${D.meta.decoy_qualify || 40}+ decoy routes for percentiles (has ${d.decoys}).</p>`}</div>
+      : ""}</div>
   </section>`;
 }
 
