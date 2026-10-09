@@ -521,9 +521,6 @@ function selectPlayer(id, scroll) {
         <div class="cardback">${cardBackHTML(p)}</div>
         <div class="roles">${decoyHTML(p)}</div>
       </div>
-    </div>
-    <div class="foot">
-      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Baited defender:</b> judged over the last 1.5 s before the throw. He must have stayed closer to this decoy than to any other route runner, be within 15 yards of him at the throw, and either be within 7 yards or be chasing him (moving toward him or mirroring his movement, with a stricter bar the farther away he is). Defenders within 5 yards of the target do not count. <b>Real decoy play:</b> 2 or more baited defenders, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, his baited defenders multiplied by their distance from the target, in yards, then divided by (1 + teammates inside his 5-yard zone), since defenders there may be covering the teammate. Tracking in this dataset runs from about 0.5 s before the snap to 0.5 s after the throw. The decoy highlight appears from the throw onward. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
