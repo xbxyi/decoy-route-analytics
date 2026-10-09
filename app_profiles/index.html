@@ -251,6 +251,48 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
   .side .pcard { width: 236px; }
   .roster { max-height: 360px; }
 }
+
+/* decoys + playback speed */
+:root { --decoy: #38c6f4; }
+.speeds { display: flex; gap: 4px; }
+.spd { border: 1px solid var(--rule); background: var(--surface); border-radius: 3px; padding: 4px 8px; cursor: pointer; font: 600 12px var(--f-data); min-width: 0; }
+.spd[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.transport { flex-wrap: wrap; }
+.transport .clock { min-width: 9.5em; }
+.decoys { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; border-top: 1px solid var(--rule); padding-top: 8px; }
+.decoys .dh { font: 600 11px var(--f-body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); }
+.decoys .dc b { color: var(--ink); font-weight: 600; }
+.decoys .ds { font-family: var(--f-data); color: var(--ink); }
+.decoys .d2 { font: 700 10px var(--f-body); font-style: normal; color: var(--bg); background: var(--decoy); padding: 1px 4px; border-radius: 2px; }
+
+/* card front: big photo, name bar, Madden tag */
+.pcard.front .face { bottom: 30%; width: 90%; right: 5%; }
+.pcard.front .jn { top: 8%; }
+.pcard.front .nm { top: 70%; font-size: 1.75em; }
+.pcard.front .src { top: auto; bottom: 15%; font-size: .62em; opacity: .85; }
+/* card back: same shape, darker, ratings + bio */
+.cardback { display: flex; justify-content: center; }
+.pcard.back .in { background: linear-gradient(180deg, color-mix(in srgb, var(--c1) 70%, #000) 0%, color-mix(in srgb, var(--c1) 45%, #000) 100%); }
+.pcard.back .bh { position: absolute; top: 4.5%; left: 0; right: 0; text-align: center; font: 700 .55em/1 var(--f-body); letter-spacing: .14em; text-transform: uppercase; opacity: .8; }
+.pcard.back .bn { position: absolute; top: 10%; left: 10%; right: 10%; text-align: center; font-size: 1.35em; font-weight: 800; text-transform: uppercase; line-height: 1; }
+.pcard.back .ba { position: absolute; top: 17.5%; left: 10%; right: 10%; text-align: center; font: 500 .62em var(--f-body); opacity: .8; }
+.pcard.back .battrs { position: absolute; top: 24%; left: 11%; right: 11%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.pcard.back .battrs div { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: baseline; }
+.pcard.back .battrs b { font-size: 1.45em; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; grid-row: span 2; }
+.pcard.back .battrs span { font-size: .85em; font-weight: 700; letter-spacing: .04em; }
+.pcard.back .battrs small { font: 500 .5em/1.1 var(--f-body); opacity: .75; text-transform: lowercase; }
+.pcard.back .bbio { position: absolute; top: 62%; left: 15%; right: 15%; margin: 0; display: grid; gap: 2px; font: 500 .62em/1.25 var(--f-body); }
+.pcard.back .bbio div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(255,255,255,.15); padding-bottom: 2px; }
+.pcard.back .bbio dt { opacity: .7; }
+.pcard.back .bbio dd { margin: 0; font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* percentile sections under the replay */
+.roles.under { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 32px; }
+.roles.under .role { grid-template-columns: minmax(0, 1fr); gap: 10px; padding-top: 12px; }
+.roles.under .role h3 { font-size: 20px; }
+.side { gap: 14px; }
+@media (max-width: 1250px) { .side .pcard { width: 100%; } }
+@media (max-width: 980px) { .side { grid-template-columns: repeat(2, minmax(0, 236px)); justify-content: center; } .side .pcard { width: 100%; } }
+@media (max-width: 520px) { .side { grid-template-columns: minmax(0, 236px); } }
 </style>
 
 <div class="wrap">
@@ -302,7 +344,8 @@ const COUNTS = {
        ["yds", "passing yards", int], ["sacks", "sacks taken", int], ["ints", "interceptions", int], ["tt", "s avg time to throw", f2]],
 };
 const PCTS = {
-  route: [["sep", "Separation at throw"], ["tgt_share", "Targets per route"], ["yds", "Receiving yards"], ["top", "Top speed"]],
+  route: [["sep", "Separation at throw"], ["tgt_share", "Targets per route"], ["yds", "Receiving yards"], ["top", "Top speed"],
+          ["decoy_score", "Decoy score"], ["decoy_multi", "Drew 2+ defenders as decoy"]],
   rush: [["pressure_rate", "Pressure rate"], ["pressures", "Total pressures"], ["sacks", "Sacks"], ["top", "Top speed"]],
   block: [["allowed_rate", "Pressure allowed rate"], ["beaten", "Times beaten"]],
   coverage: [["near", "Tight to receivers"], ["comp_allowed", "Completions allowed"], ["ints", "Interceptions"], ["top", "Top speed"]],
@@ -457,25 +500,36 @@ function selectPlayer(id, scroll) {
           <div class="fieldbox">
             <div class="canvaswrap"><canvas id="field" role="img" aria-label="Overhead replay of the selected play"></canvas></div>
             <div class="transport"><button id="playbtn" type="button">Pause</button>
-              <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Play timeline"><span class="clock" id="clock">loading</span></div>
+              <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Play timeline"><span class="clock" id="clock">loading</span>
+              <span class="speeds" role="group" aria-label="Playback speed">${[[1, "1×"], [0.5, "½×"], [0.25, "¼×"]].map(([r, l]) =>
+                `<button type="button" class="spd" data-r="${r}" aria-pressed="${r === playRate}">${l}</button>`).join("")}</span></div>
             <div class="legend"><span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))}</span>
-              <span><i style="background:var(--tv-yellow)"></i>Target</span><span><i style="background:var(--off)"></i>Offense</span>
+              <span><i style="background:var(--tv-yellow)"></i>Target</span>
+              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Decoy (5-yd zone at the throw)</span>
+              <span><i style="background:var(--off)"></i>Offense</span>
               <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
+            <div class="decoys" id="decoys"></div>
           </div>
         <div class="picker">
           <div class="eyebrow" id="playshead">Plays</div>
           <div class="plays" id="plays"></div>
         </div>
+        <div class="roles under">${roles.map(r => roleHTML(p, r)).join("")}</div>
       </div>
       <div class="side">
         <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button></div>
-        <div class="roles">${roles.map(r => roleHTML(p, r)).join("")}</div>
+        <div class="cardback">${cardBackHTML(p)}</div>
       </div>
     </div>
     <div class="foot">
       <p><b>Separation</b> and <b>distance to nearest receiver</b> are measured at the moment the ball is thrown. <b>Pressures</b>, <b>hits</b>, <b>hurries</b> and <b>beaten</b> are PFF's charting. A defender is <b>targeted</b> when he was the closest coverage defender to the intended receiver at the throw. The match minute counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
+  document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
+    playRate = +b.dataset.r; anim.last = 0;
+    document.querySelectorAll(".spd").forEach(x => x.setAttribute("aria-pressed", x === b));
+    try { localStorage.setItem("film-rate", playRate); } catch (e) {}
+  });
   getFaces(p.team).then(() => refreshCard(p));
   getFilm(p.team).then(F => { if (state.player === p.id) renderMatches(p, (F.plays || {})[p.id] || []); })
     .catch(() => { $("#matchsel").innerHTML = `<option>Couldn't load the replays for ${esc(p.team)}</option>`; });
@@ -589,18 +643,32 @@ function card(p) {
 
 function cardHTML(p) {
   const c = card(p), [c1, c2] = TEAM_COLORS[p.team] || ["#2c3a33", "#5b6b62"];
-  const bio = [p.ht, p.wt ? p.wt + " lb" : null, p.age ? "age " + p.age : null].filter(Boolean).join(" · ");
   const face = (faces[p.team] && !(faces[p.team] instanceof Promise)) ? faces[p.team][p.id] : null;
-  return `<div class="pcard tier-${c.tier}${face ? " has-face" : ""}" style="--c1:${c1};--c2:${c2}" aria-label="${esc(p.name)}, overall ${c.ovr ?? "unrated"}">
+  return `<div class="pcard front tier-${c.tier}${face ? " has-face" : ""}" style="--c1:${c1};--c2:${c2}" aria-label="${esc(p.name)}, overall ${c.ovr ?? "unrated"}">
     <div class="in">
       <div class="jn">${p.num ?? ""}</div>${face ? `<img class="face" src="${face}" alt="">` : ""}
-      <div class="src">${c.src === "madden" ? "Madden 22" : "Not in Madden"}</div>
       <div class="ovr"><b>${c.ovr ?? "–"}</b><span>${esc(p.pos || "")}</span><i>${p.team}</i></div>
       <div class="nm">${esc(p.name.split(" ").slice(-1)[0])}</div>
-      <div class="lower"><div class="attrs">${c.attrs.map(a => `<div title="${esc(a.help || "")}"><b>${a.v}</b><span>${a.lab}</span></div>`).join("")}</div>
-      <div class="bio">${esc(bio)}${p.college ? "<br>" + esc(p.college) : ""}</div></div>
+      <div class="src">${c.src === "madden" ? "Madden 22" : "Not in Madden 22"}</div>
     </div>
     <div class="shine"></div>
+  </div>`;
+}
+
+function cardBackHTML(p) {
+  const c = card(p), [c1, c2] = TEAM_COLORS[p.team] || ["#2c3a33", "#5b6b62"], m = MADDEN[p.id];
+  const rows = [["Height", p.ht], ["Weight", p.wt ? p.wt + " lb" : null], ["Age", p.age], ["College", p.college],
+                ["Number", p.num != null ? "#" + p.num : null]].filter(([, v]) => v != null && v !== "");
+  const arch = m && m.arch ? m.arch.replace(/_/g, " ").replace(/^\w+ /, "").replace(/([a-z])([A-Z])/g, "$1 $2") : null;
+  const head = c.src === "madden" ? `Madden 22 · ${m && m.wk8 ? "week 8" : "launch"} ratings` : "2021 numbers · weeks 1–8";
+  return `<div class="pcard back tier-${c.tier}" style="--c1:${c1};--c2:${c2}" aria-label="${esc(p.name)} card back">
+    <div class="in">
+      <div class="bh">${head}</div>
+      <div class="bn">${esc(p.name)}</div>
+      ${arch ? `<div class="ba">${esc(arch)}</div>` : ""}
+      <div class="battrs">${c.attrs.map(a => `<div title="${esc(a.help || "")}"><b>${a.v}</b><span>${a.lab}</span><small>${esc(a.help || "")}</small></div>`).join("")}</div>
+      <dl class="bbio">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    </div>
   </div>`;
 }
 
@@ -624,6 +692,8 @@ async function walkout(p) {
 
 /* ───────── field replay ───────── */
 let anim = { raf: 0, t: 0, playing: false, last: 0, play: null };
+let playRate = 1;
+try { playRate = +localStorage.getItem("film-rate") || 1; } catch (e) {}
 
 async function getFilm(team) {
   if (!film[team]) film[team] = fetch(`film_${team}.json`).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
@@ -643,13 +713,41 @@ async function loadPlay(p, q) {
   let xmin = 1e9, xmax = -1e9;
   frames.forEach(f => f.pos.forEach(([x], id) => { if (id) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); } }));
   const los = (frames[0].pos.get(0) || [xmin + 8])[0];
+  const decoys = findDecoys(F, frames, keyT, q.target);
   anim = { raf: 0, t: reduce ? keyT : 0, playing: !reduce, last: 0,
-           play: { p, q, F, frames, end, keyT, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
+           play: { p, q, F, frames, end, keyT, decoys, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
+  renderDecoys(decoys, q.target);
   $("#playbtn").textContent = anim.playing ? "Pause" : "Play";
   $("#playbtn").onclick = () => { if (!anim.playing && anim.t >= end) anim.t = 0;
     anim.playing = !anim.playing; $("#playbtn").textContent = anim.playing ? "Pause" : "Play"; anim.last = 0; tick(); };
   $("#scrub").oninput = e => { anim.t = (+e.target.value / 1000) * end; anim.playing = false; $("#playbtn").textContent = "Play"; draw(); };
   watchField(); sizeCanvas(); tick();
+}
+
+/* Decoy Efficiency, as briefed: at the throw, every route runner who is not the target is a decoy.
+   Count coverage defenders within 5 yd of him (not also within 5 yd of the target) and multiply
+   that count by their distance from the target: score = sum of those distances, in yards. */
+const DECOY_YDS = 5;
+function findDecoys(F, frames, keyT, target) {
+  if (!F.thrown || !target) return [];
+  const fr = frames.reduce((a, f) => Math.abs(f.t - keyT) < Math.abs(a.t - keyT) ? f : a, frames[0]);
+  const T = fr.pos.get(target); if (!T) return [];
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const covs = [...fr.pos.keys()].filter(id => F.roles[id] === "coverage" && d(fr.pos.get(id), T) >= DECOY_YDS);
+  return [...fr.pos.keys()].filter(id => F.roles[id] === "route" && id !== target).map(id => {
+    const me = fr.pos.get(id), att = covs.filter(c => d(fr.pos.get(c), me) < DECOY_YDS);
+    const dists = att.map(c => d(fr.pos.get(c), T));
+    return { id, att, n: att.length, pull: dists.length ? dists.reduce((a, b) => a + b, 0) / dists.length : 0,
+             score: dists.reduce((a, b) => a + b, 0) };
+  }).sort((a, b) => b.score - a.score);
+}
+function renderDecoys(decoys, target) {
+  const el = $("#decoys"); if (!el) return;
+  if (!target) { el.innerHTML = `<span class="dh">Decoys</span> No pass thrown on this play, so no decoys.`; return; }
+  const live = decoys.filter(x => x.n);
+  el.innerHTML = `<span class="dh">Decoys at the throw</span> ` + (live.length
+    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = <b class="ds">${f1(x.score)}</b>${x.n >= 2 ? ' <i class="d2">2+</i>' : ""}</span>`).join("")
+    : `No decoy had a defender within ${DECOY_YDS} yards (${decoys.length} decoy route${decoys.length === 1 ? "" : "s"}).`);
 }
 
 let fieldObs = null;
@@ -676,7 +774,7 @@ function sizeCanvas() {
 
 function tick(ts) {
   if (anim.playing) {
-    if (ts && anim.last) anim.t += (ts - anim.last) / 1000;
+    if (ts && anim.last) anim.t += (ts - anim.last) / 1000 * playRate;   // tracking is 10 Hz: 1× is real time
     anim.last = ts || 0;
     if (anim.t >= anim.play.end) { anim.t = anim.play.end; anim.playing = false; $("#playbtn").textContent = "Replay"; }
     anim.raf = requestAnimationFrame(tick);
@@ -718,12 +816,26 @@ function draw() {
   for (const f of P.frames) { if (f.t > anim.t) break; const q = f.pos.get(me); if (!q) continue; started ? g.lineTo(X(q[1]), Y(q[0])) : g.moveTo(X(q[1]), Y(q[0])); started = true; }
   const mp = pos.get(me); if (mp && started) g.lineTo(X(mp[1]), Y(mp[0]));
   g.stroke(); g.globalAlpha = 1;
+  // decoys: 5-yard zone and tethers to the defenders they hold, from the throw on
+  const decoyCol = tok("--decoy"), live = (P.decoys || []).filter(x => x.n), held = new Set();
+  if (atKey) live.forEach(x => {
+    const dp = pos.get(x.id); if (!dp) return;
+    g.beginPath(); g.arc(X(dp[1]), Y(dp[0]), DECOY_YDS * s, 0, Math.PI * 2);
+    g.fillStyle = "rgba(56,198,244,.14)"; g.fill();
+    g.setLineDash([4 * dpr, 4 * dpr]); g.strokeStyle = decoyCol; g.lineWidth = 1.5 * dpr; g.stroke(); g.setLineDash([]);
+    g.lineWidth = 2 * dpr;
+    x.att.forEach(c => { held.add(c); const cp = pos.get(c); if (cp) { g.beginPath(); g.moveTo(X(dp[1]), Y(dp[0])); g.lineTo(X(cp[1]), Y(cp[0])); g.stroke(); } });
+  });
+  const isDecoy = new Set((P.decoys || []).map(x => x.id));
   pos.forEach(([x, y], id) => {
     if (!id) return;
     const role = roles[id] || "", def = role === "coverage" || role === "rush";
     g.beginPath(); g.arc(X(y), Y(x), id === me ? r * 1.2 : r, 0, Math.PI * 2);
     g.fillStyle = id === me ? tok("--pylon-fill") : (id === tgt && P.F.thrown) ? tok("--tv-yellow") : def ? tok("--def") : tok("--off");
-    g.fill(); g.lineWidth = 1.5 * dpr; g.strokeStyle = def ? "rgba(255,255,255,.7)" : "rgba(0,0,0,.45)"; g.stroke();
+    g.fill(); g.lineWidth = 1.5 * dpr; g.strokeStyle = def ? "rgba(255,255,255,.7)" : "rgba(0,0,0,.45)";
+    if (isDecoy.has(id)) { g.lineWidth = 3 * dpr; g.strokeStyle = decoyCol; }
+    if (atKey && held.has(id)) { g.lineWidth = 3 * dpr; g.strokeStyle = decoyCol; }
+    g.stroke();
   });
   const b = pos.get(0);
   if (b) { g.beginPath(); g.ellipse(X(b[1]), Y(b[0]), r * .55, r * .38, 0, 0, Math.PI * 2); g.fillStyle = "#7a4a22"; g.fill(); g.strokeStyle = "#fff"; g.lineWidth = dpr; g.stroke(); }
@@ -731,10 +843,16 @@ function draw() {
   const label = (id, txt, col) => { const p = pos.get(id); if (!p) return; const tx = X(p[1]) + r + 4 * dpr, ty = Y(p[0]);
     g.lineWidth = 3 * dpr; g.strokeStyle = "rgba(0,0,0,.6)"; g.strokeText(txt, tx, ty); g.fillStyle = col; g.fillText(txt, tx, ty); };
   label(me, short(P.p.name), "#fff");
+  if (atKey) live.forEach(x => { if (x.id !== me) label(x.id, `${short(D.names[x.id] || "")} · decoy ×${x.n} · ${Math.round(x.score)}`, decoyCol);
+                                 else label(me, `${short(P.p.name)} · decoy ×${x.n} · ${Math.round(x.score)}`, decoyCol); });
   if (tgt && tgt !== me && P.F.thrown) label(tgt, short(D.names[tgt] || "") + " · target", tok("--tv-yellow"));
   if (atKey) { g.font = `800 ${Math.max(14 * dpr, s * 2.2)}px ${tok("--f-display")}`; g.textAlign = "left"; g.textBaseline = "top";
     g.fillStyle = "#fff"; g.fillText(P.F.thrown ? "THROW" : (P.q.result === "S" ? "SACK" : "END OF PLAY"), 8 * dpr, 8 * dpr); }
-  $("#clock").textContent = `${anim.t.toFixed(1)} s${atKey ? (P.F.thrown ? " · throw" : "") : ""}`;
+  // his real speed right now, from the two tracking frames around t
+  const fr = P.frames, j = Math.max(1, Math.min(fr.length - 1, fr.findIndex(f => f.t > anim.t)));
+  const pa = fr[j - 1].pos.get(me), pb = fr[j].pos.get(me);
+  const v = pa && pb && fr[j].t > fr[j - 1].t ? Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / (fr[j].t - fr[j - 1].t) : null;
+  $("#clock").textContent = `${anim.t.toFixed(1)} s${atKey ? (P.F.thrown ? " · throw" : "") : ""}${v != null ? ` · ${(v * 2.04545).toFixed(0)} mph` : ""}`;
   $("#scrub").value = Math.round(anim.t / P.end * 1000);
 }
 

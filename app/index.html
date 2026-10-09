@@ -180,12 +180,13 @@ td.n, th.n { text-align: right; }
           <option value="ALL">All teams</option>
         </select>
         <select id="sort" aria-label="Sort by">
+          <option value="raw">Decoy score (defenders × yds)</option>
           <option value="goe">Over expected</option>
           <option value="drawn">Defenders drawn</option>
           <option value="multi_rate">Drew 2+ rate</option>
         </select>
       </div>
-      <div class="boardhead"><span>#</span><span>Player</span><span>Drawn</span><span>vs exp</span></div>
+      <div class="boardhead"><span>#</span><span>Player</span><span id="vhead">Score</span><span>vs exp</span></div>
       <div class="board"><ol id="board"></ol></div>
     </aside>
 
@@ -206,8 +207,8 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const RES = { C: "complete", I: "incomplete", IN: "intercepted" };
 const short = n => { const p = String(n || "").split(" "); return p.length > 1 ? p[0][0] + ". " + p.slice(1).join(" ") : n; };
 
-let D, state = { pos: "ALL", team: "ALL", q: "", sort: "goe", player: null, play: null };
-try { const s = JSON.parse(localStorage.getItem("decoy-ui") || "{}"); Object.assign(state, { pos: s.pos || "ALL", team: s.team || "ALL", sort: s.sort || "goe" }); } catch (e) {}
+let D, state = { pos: "ALL", team: "ALL", q: "", sort: "raw", player: null, play: null };
+try { const s = JSON.parse(localStorage.getItem("decoy-ui") || "{}"); Object.assign(state, { pos: s.pos || "ALL", team: s.team || "ALL", sort: s.sort || "raw" }); } catch (e) {}
 const save = () => { try { localStorage.setItem("decoy-ui", JSON.stringify({ pos: state.pos, team: state.team, sort: state.sort })); } catch (e) {} };
 
 fetch("decoy.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(init).catch(err => {
@@ -246,11 +247,12 @@ function visible() {
 
 function renderBoard() {
   const list = visible();
+  $("#vhead").textContent = { raw: "Score", multi_rate: "2+ rate", drawn: "Drawn", goe: "Drawn" }[state.sort];
   $("#board").innerHTML = list.map((p, i) => `
     <li><button class="row" data-id="${p.id}" aria-current="${p.id === state.player}">
       <span class="rk">${i + 1}</span>
       <span class="nm">${esc(p.name)}<span class="meta">${p.pos} · ${p.team} · ${p.decoys} decoy routes</span></span>
-      <span class="v">${state.sort === "multi_rate" ? pct(p.multi_rate) : fmt(p.drawn)}</span>
+      <span class="v">${state.sort === "multi_rate" ? pct(p.multi_rate) : state.sort === "raw" ? fmt(p.raw, 1) : fmt(p.drawn)}</span>
       <span class="goe ${p.goe >= 0 ? "pos" : "neg"}">${sgn(p.goe)}</span>
     </button></li>`).join("") || `<li class="loading">No ${state.pos === "ALL" ? "" : state.pos + " "}player${state.team === "ALL" ? "" : " on " + state.team} matches${state.q ? " “" + esc(state.q) + "”" : " these filters"}.</li>`;
   $("#board").querySelectorAll(".row").forEach(b => b.onclick = () => selectPlayer(+b.dataset.id, true));
