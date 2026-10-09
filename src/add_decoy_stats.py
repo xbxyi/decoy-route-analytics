@@ -5,7 +5,8 @@
 
 Per decoy route (a route run while the ball went to someone else), at the throw:
   defenders  = coverage defenders within 5 yd of him (and not within 5 yd of the target)
-  score      = defenders x their distance from the target, in yards  (the brief's formula)
+  score      = defenders x their distance from the target, in yards  (the brief's formula),
+               divided by (1 + teammates inside his 5-yd zone) so crowded spots share the credit
 Per player: decoy routes, average score, average defenders drawn, share of routes drawing 2+.
 """
 from __future__ import annotations
@@ -25,7 +26,7 @@ QUALIFY = 40
 def main():
     r = pl.read_parquet(REPS)
     agg = (r.group_by("nflId").agg(pl.len().alias("decoys"),
-                                   pl.col("score_raw").mean().alias("decoy_score"),
+                                   pl.col("score_adj").mean().alias("decoy_score"),
                                    pl.col("attached").mean().alias("decoy_drawn"),
                                    (pl.col("attached") >= 2).mean().alias("decoy_multi"),
                                    (pl.col("attached") >= 2).sum().alias("decoy_multi_n"),
@@ -36,11 +37,11 @@ def main():
     per_game = (r.group_by(["nflId", "gameId"]).agg(pl.len().alias("n"),
                                                     (pl.col("attached") >= 1).sum().alias("drew"),
                                                     (pl.col("attached") >= 2).sum().alias("multi"),
-                                                    pl.col("score_raw").max().alias("best"),
-                                                    pl.col("score_raw").mean().alias("avg"),
+                                                    pl.col("score_adj").max().alias("best"),
+                                                    pl.col("score_adj").mean().alias("avg"),
                                                     ((pl.col("attached") >= 2) & (pl.col("score") > 0)).sum().alias("real")))
     games = {(row["nflId"], row["gameId"]): row for row in per_game.iter_rows(named=True)}
-    best = r.group_by("nflId").agg(pl.col("score_raw").max().alias("best"))
+    best = r.group_by("nflId").agg(pl.col("score_adj").max().alias("best"))
     best = dict(best.iter_rows())
 
     idx = json.load(open(INDEX, encoding="utf-8"))

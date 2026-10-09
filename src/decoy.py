@@ -109,6 +109,9 @@ def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict
       score      — drag: for each attached defender, how many yards FURTHER from the target
                    he is at the throw than at the snap (floored at 0). Yards of coverage
                    the decoy actually pulled off the target.
+      score_adj  — score_raw / (1 + teammates inside the decoy's 5-yd zone). If other offensive
+                   players are standing in his zone, the defenders there may be covering them,
+                   so the decoy gets a share of the credit, not all of it.
     """
     key = ["gameId", "playId", "nflId"]
     roles = pff.select(key + ["pff_role"])
@@ -125,6 +128,9 @@ def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict
         role = grp["pff_role"].str.to_lowercase()
         route = grp.filter(role == "pass route")
         cov = grp.filter(role == "coverage")
+        mates = grp.filter(role.is_in(["pass route", "pass block"]))     # offense minus the QB
+        M = mates.select(["x", "y"]).to_numpy()
+        mid = mates["nflId"].to_numpy()
         t = route.filter(pl.col("nflId") == tid)
         if t.is_empty() or cov.is_empty():
             continue
@@ -145,12 +151,14 @@ def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict
             att = (dd < ATTACH_YDS) & ~on_target
             n = int(att.sum())
             raw = float(d_to_t[att].sum())
+            tm = int(((np.hypot(M[:, 0] - x, M[:, 1] - y) < ATTACH_YDS) & (mid != nid)).sum())
             sc = float(drag[att].sum())
             tot_raw += raw
             tot += sc
             n_multi += n >= 2
             out.append(dict(gameId=g, playId=p, nflId=nid, targetId=tid, attached=n,
                             score_raw=round(raw, 2), score=round(sc, 2),
+                            teammates=tm, score_adj=round(raw / (1 + tm), 2),
                             dist_to_target=round(float(np.hypot(x - T[0], y - T[1])), 2),
                             depth=round(x - los.get((g, p), np.nan), 2),
                             width=round(abs(y - 26.65), 2), ncov=len(cid),

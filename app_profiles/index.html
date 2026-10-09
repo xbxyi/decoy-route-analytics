@@ -531,7 +531,7 @@ function selectPlayer(id, scroll) {
       </div>
     </div>
     <div class="foot">
-      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Real decoy play:</b> 2 or more coverage defenders within 5 yards of him at the throw, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
+      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Real decoy play:</b> 2 or more coverage defenders within 5 yards of him at the throw, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards, then divided by (1 + teammates inside his 5-yard zone), since defenders there may be covering the teammate. Tracking in this dataset runs from about 0.5 s before the snap to 0.5 s after the throw; the replay pauses on the throw so you can read it. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
@@ -745,19 +745,22 @@ async function loadPlay(p, q) {
   frames.forEach(f => f.pos.forEach(([x], id) => { if (id) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); } }));
   const los = (frames[0].pos.get(0) || [xmin + 8])[0];
   const decoys = findDecoys(F, frames, keyT, q.target);
-  anim = { raf: 0, t: reduce ? keyT : 0, playing: !reduce, last: 0,
-           play: { p, q, F, frames, end, keyT, decoys, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
+  const t0 = frames[0].t;
+  anim = { raf: 0, t: reduce ? keyT : t0, playing: !reduce, last: 0, held: false, hold: 0,
+           play: { p, q, F, frames, end, keyT, t0, decoys, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
   renderDecoys(decoys.filter(x => x.id === p.id), q.target);
   $("#playbtn").textContent = anim.playing ? "Pause" : "Play";
-  $("#playbtn").onclick = () => { if (!anim.playing && anim.t >= end) anim.t = 0;
+  $("#playbtn").onclick = () => { if (!anim.playing && anim.t >= end) { anim.t = t0; anim.held = false; }
     anim.playing = !anim.playing; $("#playbtn").textContent = anim.playing ? "Pause" : "Play"; anim.last = 0; tick(); };
-  $("#scrub").oninput = e => { anim.t = (+e.target.value / 1000) * end; anim.playing = false; $("#playbtn").textContent = "Play"; draw(); };
+  $("#scrub").oninput = e => { anim.t = t0 + (+e.target.value / 1000) * (end - t0); anim.held = true; anim.playing = false; $("#playbtn").textContent = "Play"; draw(); };
   watchField(); sizeCanvas(); tick();
 }
 
 /* Decoy Efficiency, as briefed: at the throw, every route runner who is not the target is a decoy.
    Count coverage defenders within 5 yd of him (not also within 5 yd of the target) and multiply
-   that count by their distance from the target: score = sum of those distances, in yards. */
+   that count by their distance from the target: score = sum of those distances, in yards.
+   Invisible zone: the same 5 yd around him; each teammate inside it divides the score by one more,
+   because those defenders may be there for the teammate. */
 const DECOY_YDS = 5;
 function findDecoys(F, frames, keyT, target) {
   if (!F.thrown || !target) return [];
@@ -765,11 +768,13 @@ function findDecoys(F, frames, keyT, target) {
   const T = fr.pos.get(target); if (!T) return [];
   const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const covs = [...fr.pos.keys()].filter(id => F.roles[id] === "coverage" && d(fr.pos.get(id), T) >= DECOY_YDS);
+  const mates = [...fr.pos.keys()].filter(id => F.roles[id] === "route" || F.roles[id] === "block");
   return [...fr.pos.keys()].filter(id => F.roles[id] === "route" && id !== target).map(id => {
     const me = fr.pos.get(id), att = covs.filter(c => d(fr.pos.get(c), me) < DECOY_YDS);
     const dists = att.map(c => d(fr.pos.get(c), T));
-    return { id, att, n: att.length, pull: dists.length ? dists.reduce((a, b) => a + b, 0) / dists.length : 0,
-             score: dists.reduce((a, b) => a + b, 0) };
+    const raw = dists.reduce((a, b) => a + b, 0);
+    const tm = mates.filter(m => m !== id && d(fr.pos.get(m), me) < DECOY_YDS).length;   // the invisible zone
+    return { id, att, n: att.length, pull: dists.length ? raw / dists.length : 0, raw, tm, score: raw / (1 + tm) };
   }).sort((a, b) => b.score - a.score);
 }
 function renderDecoys(decoys, target) {
@@ -777,7 +782,8 @@ function renderDecoys(decoys, target) {
   if (!target) { el.innerHTML = `<span class="dh">Decoys</span> No pass thrown on this play, so no decoys.`; return; }
   const live = decoys.filter(x => x.n);
   el.innerHTML = `<span class="dh">His decoy work at the throw</span> ` + (live.length
-    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = <b class="ds">${f1(x.score)}</b>${x.n >= 2 ? ' <i class="d2">2+</i>' : ""}</span>`).join("")
+    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = ${f1(x.raw)}${x.tm
+        ? `, ÷ ${1 + x.tm} for ${x.tm} teammate${x.tm > 1 ? "s" : ""} in his zone` : ", no teammates in his zone"} → score <b class="ds">${f1(x.score)}</b>${x.n >= 2 ? ' <i class="d2">2+</i>' : ""}</span>`).join("")
     : `He had no defender within ${DECOY_YDS} yards at the throw on this play.`);
 }
 
@@ -803,11 +809,21 @@ function sizeCanvas() {
   anim.dpr = dpr; draw();
 }
 
+const HOLD_THROW = 1.6, HOLD_END = 1.0;   // seconds the replay pauses on the throw and on the last frame
 function tick(ts) {
   if (anim.playing) {
-    if (ts && anim.last) anim.t += (ts - anim.last) / 1000 * playRate;   // tracking is 10 Hz: 1× is real time
+    const dt = ts && anim.last ? (ts - anim.last) / 1000 : 0;
     anim.last = ts || 0;
-    if (anim.t >= anim.play.end) { anim.t = anim.play.end; anim.playing = false; $("#playbtn").textContent = "Replay"; }
+    if (anim.hold > 0) anim.hold -= dt;                                   // pause on a real frame
+    else anim.t += dt * playRate;                                         // tracking is 10 Hz: 1× is real time
+    if (!anim.held && anim.play.F.thrown && anim.t >= anim.play.keyT) {   // freeze on the throw so the decoy reads
+      anim.t = anim.play.keyT; anim.held = true; anim.hold = HOLD_THROW;
+    }
+    if (anim.t >= anim.play.end) {
+      anim.t = anim.play.end;
+      if (anim.hold <= 0 && !anim.endHeld) { anim.hold = HOLD_END; anim.endHeld = true; }
+      else if (anim.hold <= 0) { anim.playing = false; anim.endHeld = false; $("#playbtn").textContent = "Replay"; }
+    }
     anim.raf = requestAnimationFrame(tick);
   }
   draw();
@@ -884,7 +900,7 @@ function draw() {
   const pa = fr[j - 1].pos.get(me), pb = fr[j].pos.get(me);
   const v = pa && pb && fr[j].t > fr[j - 1].t ? Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / (fr[j].t - fr[j - 1].t) : null;
   $("#clock").textContent = `${anim.t.toFixed(1)} s${atKey ? (P.F.thrown ? " · throw" : "") : ""}${v != null ? ` · ${(v * 2.04545).toFixed(0)} mph` : ""}`;
-  $("#scrub").value = Math.round(anim.t / P.end * 1000);
+  $("#scrub").value = Math.round((anim.t - P.t0) / (P.end - P.t0) * 1000);
 }
 
 window.addEventListener("resize", () => { clearTimeout(window._rs); window._rs = setTimeout(sizeCanvas, 120); });

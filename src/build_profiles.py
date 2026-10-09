@@ -40,6 +40,8 @@ THROW = ("pass_forward", "autoevent_passforward")
 END = ("qb_sack", "qb_strip_sack", "run", "fumble", "pass_shovel")
 MPH = 2.04545          # yd/s -> mph
 QUALIFY = 40           # snaps in a role to get percentiles
+PRE_SNAP = 15          # replay frames before the snap (1.5 s)
+POST_KEY = 30          # replay frames after the throw / end event (3 s)
 PER_GAME = 1           # replay plays stored per player per game: his best real decoy play
 REAL_DECOY_MIN = 2     # defenders within 5 yd at the throw for a play to count as a real decoy play
 SEASON_BEST = 3        # flagged as season highlights
@@ -59,7 +61,7 @@ def play_rows(d: BDB, gid: int, pff: pl.DataFrame, plays: dict, tgt: dict):
     fr = (snap.join(thr, on="playId", how="left").join(end, on="playId", how="left").join(last, on="playId")
               .with_columns(pl.coalesce("thr", "endev", "last").alias("key")))
     tr = (tr.join(fr, on="playId")
-            .filter((pl.col("frameId") >= pl.col("snap")) & (pl.col("frameId") <= pl.col("key") + 10))
+            .filter((pl.col("frameId") >= pl.col("snap") - PRE_SNAP) & (pl.col("frameId") <= pl.col("key") + POST_KEY))
             .join(pff, on=["gameId", "playId", "nflId"], how="left"))
     rows, team_of = [], {}
     for (pid,), g in tr.group_by(["playId"]):
@@ -69,7 +71,7 @@ def play_rows(d: BDB, gid: int, pff: pl.DataFrame, plays: dict, tgt: dict):
         snapf, key = g["snap"][0], g["key"][0]
         thrown = g["thr"][0] is not None
         tt = (key - snapf) / 10 if thrown else None
-        top = (g.filter(pl.col("frameId") <= key).group_by("nflId").agg(pl.col("s").max())
+        top = (g.filter((pl.col("frameId") >= snapf) & (pl.col("frameId") <= key)).group_by("nflId").agg(pl.col("s").max())
                 .drop_nulls().rows())
         topspd = dict(top)
         at = g.filter((pl.col("frameId") == key) & pl.col("nflId").is_not_null())
@@ -121,7 +123,7 @@ def frames_for(tr: pl.DataFrame, pid: int) -> dict:
     """Compact replay: ids once, then per frame [t, x1*10, y1*10, x2*10, ...] (ball id 0)."""
     g = tr.filter(pl.col("playId") == pid)
     snapf, key = g["snap"][0], g["key"][0]
-    g = g.filter(((pl.col("frameId") - snapf) % 2 == 0) | (pl.col("frameId") == key)).with_columns(pl.col("nflId").fill_null(0))
+    g = g.filter(((pl.col("frameId") - snapf + 1000) % 2 == 0) | (pl.col("frameId") == key)).with_columns(pl.col("nflId").fill_null(0))
     ids = sorted(g["nflId"].unique().to_list())
     pos = {(f, n): (x, y) for f, n, x, y in g.select(["frameId", "nflId", "x", "y"]).iter_rows()}
     frames = []
@@ -178,7 +180,7 @@ PCT = {"route": [("sep", True), ("tgt_share", True), ("yds", True), ("top", True
 
 
 EXTRA = ["sep", "target", "catch", "sack", "hit", "hurry", "allowed", "tt", "int", "targeted", "comp", "near",
-         "decoy_n", "decoy_score", "decoy_drag"]
+         "decoy_n", "decoy_score", "decoy_drag", "decoy_raw", "decoy_tm"]
 DECOY_REPS = os.path.join(HERE, "..", "out", "decoy_reps.parquet")   # from decoy.py
 
 
@@ -216,8 +218,10 @@ def main():
         if k % 20 == 0:
             print(f"  game {k + 1}/{len(gids)}  rows={len(rows):,}", flush=True)
     df = pl.DataFrame(rows, infer_schema_length=None)
-    dr = (pl.read_parquet(DECOY_REPS).select(["gameId", "playId", "nflId", "attached", "score_raw", "score"])
-            .rename({"attached": "decoy_n", "score_raw": "decoy_score", "score": "decoy_drag"}))
+    dr = (pl.read_parquet(DECOY_REPS)
+            .select(["gameId", "playId", "nflId", "attached", "score_adj", "score_raw", "score", "teammates"])
+            .rename({"attached": "decoy_n", "score_adj": "decoy_score", "score_raw": "decoy_raw",
+                     "score": "decoy_drag", "teammates": "decoy_tm"}))
     df = df.join(dr, on=["gameId", "playId", "nflId"], how="left")
     print(f"player-plays: {df.height:,}")
 
