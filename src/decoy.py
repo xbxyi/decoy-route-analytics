@@ -121,7 +121,8 @@ def _paths(win: pl.DataFrame) -> dict:
     return out
 
 
-def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_target: dict) -> list[int]:
+def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_target: dict,
+           mates: list | None = None) -> list[int]:
     """Coverage defenders baited by this decoy over the last 1.5 s before the throw.
 
     A defender is baited when all hold:
@@ -131,7 +132,9 @@ def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_
       3. close (inside BAIT_CLOSE_YDS, 7, at the throw) OR pursuing: averaged over frames where he
          is moving, his velocity points at the decoy or mirrors the decoy's velocity, with the bar
          rising with distance: cosine >= 0.25 + 0.03 per yard beyond 7 (0.31 at 9 yd, 0.49 at 15);
-      4. not within ATTACH_YDS of the target at the throw (then he is covering the target).
+      4. not within ATTACH_YDS of the target at the throw (then he is covering the target);
+      5. at the throw, the decoy is the offensive player nearest to him (any teammate but the QB,
+         blockers included) — a defender standing on a teammate is never credited to the decoy.
     """
     D = paths.get(decoy)
     if D is None:
@@ -149,6 +152,9 @@ def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_
         dx, dy = at_throw[decoy]
         d_now = float(np.hypot(cx - dx, cy - dy))
         if d_now >= BAIT_MAX_YDS:
+            continue
+        if any(m != decoy and m in at_throw and np.hypot(cx - at_throw[m][0], cy - at_throw[m][1]) < d_now
+               for m in (mates or [])):
             continue
         if d_now < BAIT_CLOSE_YDS:
             out.append(c)
@@ -220,7 +226,7 @@ def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict
             dd = np.hypot(C[:, 0] - x, C[:, 1] - y)
             near5 = (dd < ATTACH_YDS) & ~on_target
             if P:
-                bait = baited(P, nid, rids, [int(c) for c in cid], xy, ontgt)
+                bait = baited(P, nid, rids, [int(c) for c in cid], xy, ontgt, [int(m) for m in mid])
                 att = np.zeros(len(cid), bool)
                 att[[cidx[b] for b in bait]] = True
             else:
