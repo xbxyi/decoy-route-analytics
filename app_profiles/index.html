@@ -667,7 +667,7 @@ function sizeCanvas() {
   if (!W) return;
   c.style.visibility = "visible";
   let h = W * len / 53.3, w = W;
-  const cap = Math.min(window.innerHeight * 0.84, 980);
+  const cap = Math.min(window.innerHeight * 0.6, 600);
   if (h > cap) { w = W * cap / h; h = cap; }
   const dpr = window.devicePixelRatio || 1;
   c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); c.style.width = w + "px"; c.style.height = h + "px";
