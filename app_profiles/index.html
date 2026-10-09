@@ -90,7 +90,8 @@ header.mast .source b { color: var(--ink); font-weight: 600; }
 .film { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
 .fieldbox { display: grid; gap: 10px; min-width: 0; }
 .canvaswrap { background: var(--turf-dark); border-radius: 4px; overflow: hidden; display: flex; justify-content: center; }
-canvas { display: block; max-width: 100%; }
+canvas { display: block; max-width: 100%; visibility: hidden; }
+.canvaswrap { min-height: 320px; align-items: center; }
 .transport { display: flex; gap: 10px; align-items: center; }
 .transport button { border: 1px solid var(--rule); background: var(--surface); border-radius: 3px; padding: 5px 12px; cursor: pointer; font-weight: 600; font-size: 13px; min-width: 70px; }
 .transport input[type=range] { flex: 1; min-width: 0; accent-color: var(--pylon-fill); }
@@ -153,6 +154,8 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
 .cardbtn:hover .shine, .cardbtn:focus-visible .shine { animation: shine 1.1s ease; }
 .cardhint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 8px; max-width: 236px; margin-inline: auto; }
 
+.pcard .src { position: absolute; left: 0; right: 0; top: 2.2%; text-align: center; font: 700 .52em/1 var(--f-body);
+  letter-spacing: .14em; text-transform: uppercase; opacity: .75; }
 /* walkout overlay */
 .walkout { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(4,8,6,.9); cursor: pointer; overflow: hidden;
   padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); perspective: 900px; }
@@ -279,9 +282,12 @@ function getFaces(team) {
     .then(f => (faces[team] = f));
   return Promise.resolve(faces[team]);
 }
+let MADDEN = {};
 let D, byId = new Map(), film = {}, state = { team: null, player: null, q: "" };
 
-fetch("index.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(init).catch(err => {
+Promise.all([fetch("index.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }),
+             fetch("madden.json").then(r => r.ok ? r.json() : {}).catch(() => ({}))])
+  .then(([idx, mad]) => { MADDEN = mad; init(idx); }).catch(err => {
   $("#profile").innerHTML = `<p class="loading">Couldn't load index.json (${esc(err.message)}). Serve this folder over HTTP: <span class="mono">python -m http.server 8000</span>.</p>`;
 });
 
@@ -384,6 +390,13 @@ function playTitle(q) {
   return "";
 }
 
+function cardHint(p) {
+  const m = MADDEN[p.id];
+  if (!m || !m.ovr) return "Not on a Madden NFL 22 roster, so the card shows his real 2021 numbers from this data (weeks 1–8). Tap the card to open it.";
+  const move = m.launch && m.wk8 && m.launch !== m.wk8 ? ` Rated ${m.launch} at launch, ${m.wk8} by week 8.` : "";
+  return `Overall and ratings: EA Madden NFL 22, ${m.wk8 ? "week 8 update" : "launch ratings"} (${esc(m.mpos)}${m.arch ? ", " + esc(m.arch.replace(/_/g, " ").replace(/^\w+ /, "")) : ""}).${move} Tap the card to open it.`;
+}
+
 function refreshCard(p) {
   const b = $("#cardbtn"); if (b && state.player === p.id) b.innerHTML = cardHTML(p);
 }
@@ -413,7 +426,7 @@ function selectPlayer(id, scroll) {
       </div>
       <div class="side">
         <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button>
-          <div class="cardhint">Tap the card to open it. Ratings are percentiles against other ${ROLE_WHO[p.primary] || "players"}, on a 40–99 scale.</div></div>
+          <div class="cardhint">${cardHint(p)}</div></div>
         <div class="picker">
           <div class="eyebrow">Pick a match</div>
           <div class="matches" id="matches"><p class="empty">Loading his games…</p></div>
@@ -516,15 +529,33 @@ const ATTR_HELP = { SEP: "separation at the throw", TGT: "targets per route", YP
   PWR: "passing yards", YPA: "yards per attempt", POC: "avoiding sacks", QCK: "time to throw", SAF: "avoiding interceptions" };
 const rate = p => 40 + Math.round(p * 0.59);           // percentile 0–100 -> card scale 40–99
 
+const MADDEN_HELP = { THP: "throw power", SAC: "short accuracy", MAC: "medium accuracy", DAC: "deep accuracy",
+  TUP: "throw under pressure", AWR: "awareness", SPD: "speed", AGI: "agility", BCV: "ball-carrier vision", BTK: "break tackle",
+  CAR: "carrying", CTH: "catching", STR: "strength", LBK: "lead block", RBK: "run block", PBK: "pass block",
+  SRR: "short route running", DRR: "deep route running", REL: "release", CIT: "catch in traffic", PBP: "pass block power",
+  PBF: "pass block finesse", PMV: "power moves", FMV: "finesse moves", BSH: "block shedding", PUR: "pursuit", TAK: "tackle",
+  PRC: "play recognition", ZCV: "zone coverage", MCV: "man coverage", PRS: "press", HPW: "hit power", KPW: "kick power", KAC: "kick accuracy" };
+// real counts from the tracking data, for players Madden never rated
+const REAL = {
+  route: [["REC", "catches"], ["YDS", "yds"], ["TGT", "targets"], ["RTS", "routes"]],
+  rush: [["PRS", "pressures"], ["SCK", "sacks"], ["HIT", "hits"], ["RSH", "rushes"]],
+  block: [["BLK", "blocks"], ["PRA", "allowed"], ["SKA", "sacks_allowed"]],
+  coverage: [["SNP", "snaps"], ["TGT", "targeted"], ["CMP", "comp"], ["INT", "ints"]],
+  qb: [["CMP", "comp"], ["ATT", "att"], ["YDS", "yds"], ["SCK", "sacks"]],
+};
+const REAL_HELP = { REC: "catches", YDS: "yards", TGT: "targets", RTS: "routes run", PRS: "pressures", SCK: "sacks", HIT: "QB hits",
+  RSH: "pass rushes", BLK: "pass blocks", PRA: "pressures allowed", SKA: "sacks allowed", SNP: "coverage snaps", CMP: "completions",
+  INT: "interceptions", ATT: "attempts" };
+
 function card(p) {
+  const m = MADDEN[p.id];
+  if (m && m.ovr) {
+    const ovr = m.ovr, tier = ovr >= 90 ? "elite" : ovr >= 80 ? "gold" : ovr >= 70 ? "silver" : "bronze";
+    return { ovr, tier, src: "madden", attrs: m.attrs.map(([lab, v]) => ({ lab, v, help: MADDEN_HELP[lab] })) };
+  }
   const x = p.roles[p.primary] || {};
-  const attrs = (ATTRS[p.primary] || []).map(([lab, k, w]) => ({ lab, w, p: x["p_" + k] })).filter(a => a.p != null);
-  const core = attrs.filter(a => a.w);
-  // small samples are pulled toward average: 60 snaps of evidence counts as half
-  const n = x[Object.keys(x)[0]] || 0, avg = core.length ? core.reduce((s, a) => s + a.p, 0) / core.length : null;
-  const ovr = avg == null ? null : rate(50 + (avg - 50) * n / (n + 60));
-  const tier = ovr == null ? "none" : ovr >= 85 ? "elite" : ovr >= 75 ? "gold" : ovr >= 62 ? "silver" : "bronze";
-  return { ovr, tier, attrs };
+  return { ovr: null, tier: "none", src: "real",
+           attrs: (REAL[p.primary] || []).map(([lab, k]) => ({ lab, v: x[k] ?? 0, help: REAL_HELP[lab] })) };
 }
 
 function cardHTML(p) {
@@ -534,10 +565,10 @@ function cardHTML(p) {
   return `<div class="pcard tier-${c.tier}${face ? " has-face" : ""}" style="--c1:${c1};--c2:${c2}" aria-label="${esc(p.name)}, overall ${c.ovr ?? "unrated"}">
     <div class="in">
       <div class="jn">${p.num ?? ""}</div>${face ? `<img class="face" src="${face}" alt="">` : ""}
+      <div class="src">${c.src === "madden" ? "Madden 22" : "Not in Madden"}</div>
       <div class="ovr"><b>${c.ovr ?? "–"}</b><span>${esc(p.pos || "")}</span><i>${p.team}</i></div>
       <div class="nm">${esc(p.name.split(" ").slice(-1)[0])}</div>
-      <div class="lower"><div class="attrs">${c.attrs.length ? c.attrs.map(a => `<div title="${ATTR_HELP[a.lab] || ""}"><b>${rate(a.p)}</b><span>${a.lab}</span></div>`).join("")
-        : `<div style="grid-column:1/-1;justify-content:center;font-size:.8em">Not enough snaps to rate</div>`}</div>
+      <div class="lower"><div class="attrs">${c.attrs.map(a => `<div title="${esc(a.help || "")}"><b>${a.v}</b><span>${a.lab}</span></div>`).join("")}</div>
       <div class="bio">${esc(bio)}${p.college ? "<br>" + esc(p.college) : ""}</div></div>
     </div>
     <div class="shine"></div>
@@ -589,12 +620,23 @@ async function loadPlay(p, q) {
   $("#playbtn").onclick = () => { if (!anim.playing && anim.t >= end) anim.t = 0;
     anim.playing = !anim.playing; $("#playbtn").textContent = anim.playing ? "Pause" : "Play"; anim.last = 0; tick(); };
   $("#scrub").oninput = e => { anim.t = (+e.target.value / 1000) * end; anim.playing = false; $("#playbtn").textContent = "Play"; draw(); };
-  sizeCanvas(); tick();
+  watchField(); sizeCanvas(); tick();
 }
 
+let fieldObs = null;
+function watchField() {
+  const wrap = $("#field") && $("#field").parentElement;
+  if (fieldObs) fieldObs.disconnect();
+  if (!wrap || !window.ResizeObserver) return;
+  let lastW = 0;
+  fieldObs = new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w && w !== lastW) { lastW = w; sizeCanvas(); } });
+  fieldObs.observe(wrap);
+}
 function sizeCanvas() {
   const c = $("#field"); if (!c || !anim.play) return;
   const W = c.parentElement.clientWidth, len = anim.play.x1 - anim.play.x0;
+  if (!W) return;
+  c.style.visibility = "visible";
   let h = W * len / 53.3, w = W;
   const cap = Math.min(window.innerHeight * 0.72, 680);
   if (h > cap) { w = W * cap / h; h = cap; }

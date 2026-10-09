@@ -16,6 +16,7 @@ cd src
 python decoy.py && python build_decoy_app.py      # -> app/decoy.json
 python build_profiles.py                          # -> app_profiles/index.json, film_<TEAM>.json
 python fetch_headshots.py                         # -> app_profiles/faces_<TEAM>.json
+python fetch_madden.py                            # -> app_profiles/madden.json (EA Madden NFL 22 ratings)
 ```
 
 ## Run
