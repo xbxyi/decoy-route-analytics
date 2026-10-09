@@ -1,4 +1,4 @@
-# Off-Ball Receiver Impact & Decoy Route Analytics
+# Decoy Route Analytics & Off-Ball Receiver Impact
 
 Elite wide receivers change games even when they never touch the ball, yet traditional stat sheets treat their off-ball contributions as invisible. We built a tracking metric that measures how effectively "decoy" receivers draw coverage defenders away from primary targets to open up high-probability passing lanes.
 
