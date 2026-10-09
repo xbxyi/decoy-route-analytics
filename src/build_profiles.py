@@ -40,7 +40,8 @@ THROW = ("pass_forward", "autoevent_passforward")
 END = ("qb_sack", "qb_strip_sack", "run", "fumble", "pass_shovel")
 MPH = 2.04545          # yd/s -> mph
 QUALIFY = 40           # snaps in a role to get percentiles
-PER_GAME = 2           # replay plays stored per player per game
+PER_GAME = 1           # replay plays stored per player per game: his best real decoy play
+REAL_DECOY_MIN = 2     # defenders within 5 yd at the throw for a play to count as a real decoy play
 SEASON_BEST = 3        # flagged as season highlights
 
 ROLE = {"pass route": "route", "pass rush": "rush", "pass block": "block",
@@ -177,7 +178,7 @@ PCT = {"route": [("sep", True), ("tgt_share", True), ("yds", True), ("top", True
 
 
 EXTRA = ["sep", "target", "catch", "sack", "hit", "hurry", "allowed", "tt", "int", "targeted", "comp", "near",
-         "decoy_n", "decoy_score"]
+         "decoy_n", "decoy_score", "decoy_drag"]
 DECOY_REPS = os.path.join(HERE, "..", "out", "decoy_reps.parquet")   # from decoy.py
 
 
@@ -215,8 +216,8 @@ def main():
         if k % 20 == 0:
             print(f"  game {k + 1}/{len(gids)}  rows={len(rows):,}", flush=True)
     df = pl.DataFrame(rows, infer_schema_length=None)
-    dr = (pl.read_parquet(DECOY_REPS).select(["gameId", "playId", "nflId", "attached", "score_raw"])
-            .rename({"attached": "decoy_n", "score_raw": "decoy_score"}))
+    dr = (pl.read_parquet(DECOY_REPS).select(["gameId", "playId", "nflId", "attached", "score_raw", "score"])
+            .rename({"attached": "decoy_n", "score_raw": "decoy_score", "score": "decoy_drag"}))
     df = df.join(dr, on=["gameId", "playId", "nflId"], how="left")
     print(f"player-plays: {df.height:,}")
 
@@ -277,7 +278,10 @@ def main():
     primary = dict(primary.iter_rows())
     picks = []
     for role in ["route"]:      # the app is about decoys: replays are decoy plays, for anyone who ran routes
-        sub_ = (df.filter((pl.col("role") == role) & (pl.col("decoy_n").fill_null(0) >= 1))
+        # a REAL decoy play: not the target, 2+ coverage defenders within 5 yd at the throw, and those
+        # defenders were pulled away from the target since the snap (drag > 0)
+        sub_ = (df.filter((pl.col("role") == role) & (pl.col("decoy_n").fill_null(0) >= REAL_DECOY_MIN)
+                          & (pl.col("decoy_drag").fill_null(0) > 0))
                   .with_columns(play_score(role).alias("score")))
         per_game = (sub_.sort("score", descending=True)
                         .group_by(["nflId", "gameId"], maintain_order=True).head(PER_GAME))

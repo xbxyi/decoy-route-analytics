@@ -380,7 +380,7 @@ const MIN_DECOYS = 20;
 const dec = p => p.roles.route || {};
 function init(data) {
   D = data;
-  D.players = D.players.filter(p => (dec(p).decoys || 0) >= MIN_DECOYS);
+  D.players = D.players.filter(p => (dec(p).decoys || 0) >= MIN_DECOYS && (dec(p).decoy_real_n || 0) >= 1);
   D.players.forEach(p => { p.primary = "route"; byId.set(p.id, p); });
   const m = D.meta, routes = D.players.reduce((a, p) => a + dec(p).decoys, 0);
   $("#source").innerHTML = `<b>${D.players.length} decoys</b> with ${MIN_DECOYS}+ decoy routes, <b>${routes.toLocaleString()}</b> decoy routes in ${m.games} games.<br>Percentiles compare decoys with ${m.decoy_qualify || 40}+ decoy routes.`;
@@ -466,7 +466,7 @@ function gameLine(g) {
 function playTitle(q) {
   const m = q.me || {};
   switch (q.role) {
-    case "route": return m.decoy_n ? `Decoy: drew ${m.decoy_n} defender${m.decoy_n > 1 ? "s" : ""} · score ${Math.round(m.decoy_score)}`
+    case "route": return m.decoy_n ? `Real decoy: ${m.decoy_n} defenders on him, pulled ${f1(m.decoy_drag)} yd off the target · score ${Math.round(m.decoy_score)}`
       : m.catch ? `${q.yds}-yard catch` : `Route, ${f1(m.sep)} yd open at the throw`;
     case "qb": return m.comp ? `${q.yds}-yard completion` : m.sack ? "Sacked" : m.int ? "Interception thrown" : "Incomplete pass";
     case "rush": return m.sack ? "Sack" : m.hit ? "QB hit" : m.hurry ? "Hurried the QB" : "Pass rush";
@@ -514,7 +514,7 @@ function selectPlayer(id, scroll) {
                 `<button type="button" class="spd" data-r="${r}" aria-pressed="${r === playRate}">${l}</button>`).join("")}</span></div>
             <div class="legend"><span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))}</span>
               <span><i style="background:var(--tv-yellow)"></i>Target</span>
-              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Decoy (5-yd zone at the throw)</span>
+              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Defenders he pulled (5-yd zone at the throw)</span>
               <span><i style="background:var(--off)"></i>Offense</span>
               <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
             <div class="decoys" id="decoys"></div>
@@ -531,7 +531,7 @@ function selectPlayer(id, scroll) {
       </div>
     </div>
     <div class="foot">
-      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
+      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Real decoy play:</b> 2 or more coverage defenders within 5 yards of him at the throw, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
@@ -547,13 +547,13 @@ function selectPlayer(id, scroll) {
 
 function renderMatches(p, plays) {
   const byGame = {};
-  p.games.filter(g => g.decoy).forEach(g => { byGame[g.gameId] = { ...g, lines: [
-    `${g.decoy.n} decoy routes · drew defenders on ${g.decoy.drew} · 2+ on ${g.decoy.multi} · best score ${Math.round(g.decoy.best)}`] }; });
+  p.games.filter(g => g.decoy && g.decoy.real > 0).forEach(g => { byGame[g.gameId] = { ...g, lines: [
+    `${g.decoy.real} real decoy play${g.decoy.real === 1 ? "" : "s"} in ${g.decoy.n} decoy routes · best score ${Math.round(g.decoy.best)}`] }; });
   const games = Object.values(byGame).sort((a, b) => a.week - b.week);
   const best = plays.filter(q => q.best);
-  const what = p.primary === "route" ? "decoy plays" : "plays";
+  const what = "real decoy plays";
   const items = [{ week: null, label: `Season best · his top ${best.length} ${what}, weeks 1–8`,
-                   sub: p.primary === "route" ? "Ranked by decoy score: defenders within 5 yd × their distance from the target, at the throw" : "", plays: best }]
+                   sub: "2+ defenders on him at the throw, pulled away from the target · ranked by decoy score", plays: best }]
     .concat(games.map(g => ({ week: g.week,
       label: `Week ${g.week} · ${niceDate(g.date)} · ${TEAM_NAMES[p.team] || p.team} vs ${TEAM_NAMES[g.opp] || g.opp}`,
       sub: `${g.home ? "Home" : "Away"} · ${g.lines.join(" · ")}`,
@@ -567,8 +567,7 @@ function renderMatches(p, plays) {
 }
 
 function renderPlays(p, m) {
-  const what = p.primary === "route" ? "Best decoy plays" : "Best plays";
-  $("#playshead").textContent = m.week ? `${what} · week ${m.week}` : `${what} · season`;
+  $("#playshead").textContent = m.week ? `His real decoy play · week ${m.week}` : "His best real decoy plays · season";
   if (!m.plays.length) {
     $("#plays").innerHTML = `<p class="empty">${p.primary === "route" ? "He didn't draw a defender as a decoy in this match." : "No replay saved for this match."}</p>`;
     return;
@@ -596,7 +595,7 @@ function decoyHTML(p) {
       <div><b>${f1(d.decoy_score)}</b><span>avg score</span></div>
       <div><b>${f1(d.decoy_best)}</b><span>best score</span></div>
       <div><b>${f2(d.decoy_drawn)}</b><span>defenders per route</span></div>
-      <div><b>${d.decoy_multi_n}</b><span>routes drawing 2+</span></div>
+      <div><b>${d.decoy_real_n}</b><span>real decoy plays</span></div>
     </div>
     <div class="pcts">${bars.length ? bars.map(([k, lab]) => { const v = d["p_" + k]; return `<div class="pct"><span>${lab}</span>
       <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${ordinal(v)}</span></div>`; }).join("")
@@ -748,7 +747,7 @@ async function loadPlay(p, q) {
   const decoys = findDecoys(F, frames, keyT, q.target);
   anim = { raf: 0, t: reduce ? keyT : 0, playing: !reduce, last: 0,
            play: { p, q, F, frames, end, keyT, decoys, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
-  renderDecoys(decoys, q.target);
+  renderDecoys(decoys.filter(x => x.id === p.id), q.target);
   $("#playbtn").textContent = anim.playing ? "Pause" : "Play";
   $("#playbtn").onclick = () => { if (!anim.playing && anim.t >= end) anim.t = 0;
     anim.playing = !anim.playing; $("#playbtn").textContent = anim.playing ? "Pause" : "Play"; anim.last = 0; tick(); };
@@ -777,9 +776,9 @@ function renderDecoys(decoys, target) {
   const el = $("#decoys"); if (!el) return;
   if (!target) { el.innerHTML = `<span class="dh">Decoys</span> No pass thrown on this play, so no decoys.`; return; }
   const live = decoys.filter(x => x.n);
-  el.innerHTML = `<span class="dh">Decoys at the throw</span> ` + (live.length
+  el.innerHTML = `<span class="dh">His decoy work at the throw</span> ` + (live.length
     ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = <b class="ds">${f1(x.score)}</b>${x.n >= 2 ? ' <i class="d2">2+</i>' : ""}</span>`).join("")
-    : `No decoy had a defender within ${DECOY_YDS} yards (${decoys.length} decoy route${decoys.length === 1 ? "" : "s"}).`);
+    : `He had no defender within ${DECOY_YDS} yards at the throw on this play.`);
 }
 
 let fieldObs = null;
@@ -849,7 +848,7 @@ function draw() {
   const mp = pos.get(me); if (mp && started) g.lineTo(X(mp[1]), Y(mp[0]));
   g.stroke(); g.globalAlpha = 1;
   // decoys: 5-yard zone and tethers to the defenders they hold, from the throw on
-  const decoyCol = tok("--decoy"), live = (P.decoys || []).filter(x => x.n), held = new Set();
+  const decoyCol = tok("--decoy"), live = (P.decoys || []).filter(x => x.n && x.id === me), held = new Set();
   if (atKey) live.forEach(x => {
     const dp = pos.get(x.id); if (!dp) return;
     g.beginPath(); g.arc(X(dp[1]), Y(dp[0]), DECOY_YDS * s, 0, Math.PI * 2);
@@ -858,7 +857,7 @@ function draw() {
     g.lineWidth = 2 * dpr;
     x.att.forEach(c => { held.add(c); const cp = pos.get(c); if (cp) { g.beginPath(); g.moveTo(X(dp[1]), Y(dp[0])); g.lineTo(X(cp[1]), Y(cp[0])); g.stroke(); } });
   });
-  const isDecoy = new Set((P.decoys || []).map(x => x.id));
+  const isDecoy = new Set((P.decoys || []).filter(x => x.id === me).map(x => x.id));
   pos.forEach(([x, y], id) => {
     if (!id) return;
     const role = roles[id] || "", def = role === "coverage" || role === "rush";

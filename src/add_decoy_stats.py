@@ -28,7 +28,8 @@ def main():
                                    pl.col("score_raw").mean().alias("decoy_score"),
                                    pl.col("attached").mean().alias("decoy_drawn"),
                                    (pl.col("attached") >= 2).mean().alias("decoy_multi"),
-                                   (pl.col("attached") >= 2).sum().alias("decoy_multi_n")))
+                                   (pl.col("attached") >= 2).sum().alias("decoy_multi_n"),
+                                   ((pl.col("attached") >= 2) & (pl.col("score") > 0)).sum().alias("decoy_real_n")))
     stats = {row["nflId"]: row for row in agg.iter_rows(named=True)}
     q = agg.filter(pl.col("decoys") >= QUALIFY)
     pools = {c: q[c].to_numpy() for c in ("decoy_score", "decoy_multi", "decoy_drawn")}
@@ -36,7 +37,8 @@ def main():
                                                     (pl.col("attached") >= 1).sum().alias("drew"),
                                                     (pl.col("attached") >= 2).sum().alias("multi"),
                                                     pl.col("score_raw").max().alias("best"),
-                                                    pl.col("score_raw").mean().alias("avg")))
+                                                    pl.col("score_raw").mean().alias("avg"),
+                                                    ((pl.col("attached") >= 2) & (pl.col("score") > 0)).sum().alias("real")))
     games = {(row["nflId"], row["gameId"]): row for row in per_game.iter_rows(named=True)}
     best = r.group_by("nflId").agg(pl.col("score_raw").max().alias("best"))
     best = dict(best.iter_rows())
@@ -51,9 +53,10 @@ def main():
         for g in p["games"]:
             pg = games.get((p["id"], g.get("gameId")))
             if g.get("role") == "route" and pg:
-                g["decoy"] = dict(n=pg["n"], drew=pg["drew"], multi=pg["multi"], best=round(pg["best"], 1), avg=round(pg["avg"], 1))
+                g["decoy"] = dict(n=pg["n"], drew=pg["drew"], multi=pg["multi"], real=pg["real"],
+                                  best=round(pg["best"], 1), avg=round(pg["avg"], 1))
         rt.update(decoy_best=round(best[p["id"]], 1), decoys=st["decoys"], decoy_score=round(st["decoy_score"], 1), decoy_drawn=round(st["decoy_drawn"], 2),
-                  decoy_multi=round(st["decoy_multi"], 3), decoy_multi_n=st["decoy_multi_n"])
+                  decoy_multi=round(st["decoy_multi"], 3), decoy_multi_n=st["decoy_multi_n"], decoy_real_n=st["decoy_real_n"])
         for c, pool in pools.items():
             v = st[c]
             rt[f"p_{c}"] = (round(100 * ((pool < v).mean() + 0.5 * (pool == v).mean()))
