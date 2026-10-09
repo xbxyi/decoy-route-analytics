@@ -1,4 +1,4 @@
-<title>NFL Player Film Room</title>
+<title>Decoy Film Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700;800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -293,14 +293,19 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
 @media (max-width: 1250px) { .side .pcard { width: 100%; } }
 @media (max-width: 980px) { .side { grid-template-columns: repeat(2, minmax(0, 236px)); justify-content: center; } .side .pcard { width: 100%; } }
 @media (max-width: 520px) { .side { grid-template-columns: minmax(0, 236px); } }
+
+.dnums { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.dnums div { display: grid; }
+.dnums b { font: 500 22px var(--f-data); font-variant-numeric: tabular-nums; }
+.dnums span { font-size: 12px; color: var(--muted); }
 </style>
 
 <div class="wrap">
   <header class="mast">
     <div>
       <div class="eyebrow">Player tracking · 2021 regular season, weeks 1–8</div>
-      <h1>Player <span>Film</span> Room</h1>
-      <p>Every player who was on the field for a pass play. Pick a team, pick a player, and see their numbers in each job they did, how they compare with everyone else doing that job, game by game, and their best plays on an overhead replay.</p>
+      <h1>Decoy <span>Film</span> Room</h1>
+      <p>Receivers, tight ends and backs who run routes while the ball goes somewhere else. At the throw, we count the defenders within 5 yards of each decoy and multiply by how far those defenders are from the real target. Pick a team, pick a decoy, and watch his best decoy plays.</p>
     </div>
     <div class="source" id="source">Loading players…</div>
   </header>
@@ -371,10 +376,14 @@ Promise.all([fetch("index.json").then(r => { if (!r.ok) throw new Error(r.status
 function base(p) { const r = p.roles[p.primary]; return r ? r[Object.keys(r)[0]] : 0; }
 function snaps(p) { return Object.values(p.roles).reduce((a, r) => a + r[Object.keys(r)[0]], 0); }
 
+const MIN_DECOYS = 20;
+const dec = p => p.roles.route || {};
 function init(data) {
-  D = data; D.players.forEach(p => byId.set(p.id, p));
-  const m = D.meta;
-  $("#source").innerHTML = `<b>${m.players.toLocaleString()} players</b> from <b>${m.plays.toLocaleString()} pass plays</b> in ${m.games} games.<br>Percentiles compare players with ${m.qualify}+ snaps in the same job.<br>Totals cover the plays in this dataset, so they run slightly below official stats.`;
+  D = data;
+  D.players = D.players.filter(p => (dec(p).decoys || 0) >= MIN_DECOYS);
+  D.players.forEach(p => { p.primary = "route"; byId.set(p.id, p); });
+  const m = D.meta, routes = D.players.reduce((a, p) => a + dec(p).decoys, 0);
+  $("#source").innerHTML = `<b>${D.players.length} decoys</b> with ${MIN_DECOYS}+ decoy routes, <b>${routes.toLocaleString()}</b> decoy routes in ${m.games} games.<br>Percentiles compare decoys with ${m.decoy_qualify || 40}+ decoy routes.`;
   const teams = [...new Set(D.players.map(p => p.team))].filter(t => t !== "UNK").sort();
   $("#teams").innerHTML = teams.map(t => `<button class="team" data-t="${t}" aria-pressed="false">${t}</button>`).join("");
   $("#teams").querySelectorAll(".team").forEach(b => b.onclick = () => pickTeam(b.dataset.t, true));
@@ -383,7 +392,7 @@ function init(data) {
   const h = location.hash.match(/^#p(\d+)$/);
   if (h) start = byId.get(+h[1]);
   try { if (!start) start = byId.get(+localStorage.getItem("film-player")); } catch (e) {}
-  if (!start) start = D.players.find(p => p.name === "Cooper Kupp") || D.players[0];
+  if (!start) start = D.players.find(p => p.name === "Davante Adams") || D.players[0];
   pickTeam(start.team, false);
   selectPlayer(start.id, false);
 }
@@ -394,30 +403,28 @@ function pickTeam(t, auto) {
   $("#teams").querySelectorAll(".team").forEach(b => b.setAttribute("aria-pressed", b.dataset.t === t));
   renderRoster();
   if (auto) {
-    const first = D.players.filter(p => p.team === t).sort((a, b) => snaps(b) - snaps(a))[0];
+    const first = D.players.filter(p => p.team === t).sort((a, b) => dec(b).decoy_score - dec(a).decoy_score)[0];
     if (first) selectPlayer(first.id, false);
   }
 }
 
 function rowHTML(p, showTeam) {
-  const r = p.roles[p.primary] || {};
-  const n = r[Object.keys(r)[0]] || 0;
+  const d = dec(p);
   return `<button class="prow" data-id="${p.id}" aria-current="${p.id === state.player}">
     <span class="pp">${esc(p.pos || "")}</span><span class="pn">${esc(p.name)}</span>
-    <span class="ps">${showTeam ? p.team + " · " : ""}${n} ${ROLE_BASE[p.primary] || ""}</span></button>`;
+    <span class="ps">${showTeam ? p.team + " · " : ""}score ${f1(d.decoy_score)}</span></button>`;
 }
 
 function renderRoster() {
   let html;
   if (state.q) {
-    const L = D.players.filter(p => p.name.toLowerCase().includes(state.q)).sort((a, b) => snaps(b) - snaps(a)).slice(0, 80);
+    const L = D.players.filter(p => p.name.toLowerCase().includes(state.q)).sort((a, b) => dec(b).decoy_score - dec(a).decoy_score).slice(0, 80);
     html = L.length ? `<div class="unit">${L.length === 80 ? "First 80 matches" : L.length + " match" + (L.length === 1 ? "" : "es")}</div>` + L.map(p => rowHTML(p, true)).join("")
                     : `<p class="loading">No player named “${esc(state.q)}”.</p>`;
   } else {
-    const L = D.players.filter(p => p.team === state.team).sort((a, b) => base(b) - base(a));
-    const groups = [["Quarterbacks", p => p.primary === "qb"], ["Receivers, tight ends and backs", p => p.primary === "route"],
-                    ["Offensive line and blocking backs", p => p.primary === "block"], ["Pass rushers", p => p.primary === "rush"],
-                    ["Coverage", p => p.primary === "coverage"]];
+    const L = D.players.filter(p => p.team === state.team).sort((a, b) => dec(b).decoy_score - dec(a).decoy_score);
+    const groups = [["Wide receivers", p => p.pos === "WR"], ["Tight ends", p => p.pos === "TE"],
+                    ["Running backs", p => p.pos === "RB" || p.pos === "FB"], ["Others", p => !["WR", "TE", "RB", "FB"].includes(p.pos)]];
     html = groups.map(([label, f]) => { const g = L.filter(f); return g.length ? `<div class="unit">${label}</div>` + g.map(p => rowHTML(p)).join("") : ""; }).join("");
   }
   $("#roster").innerHTML = html;
@@ -491,7 +498,7 @@ function selectPlayer(id, scroll) {
     <div class="top">
       <div class="intro">
         <div class="who">
-          <div class="tag">${p.num != null ? "#" + p.num + " · " : ""}${esc(p.pos || "")} · ${esc(TEAM_NAMES[p.team] || p.team)} · ${ROLE_NAME[p.primary] || ""}</div>
+          <div class="tag">${p.num != null ? "#" + p.num + " · " : ""}${esc(p.pos || "")} · ${esc(TEAM_NAMES[p.team] || p.team)} · Decoy</div>
           <h2>${esc(p.name)}</h2>
         </div>
         <div class="matchbar">
@@ -520,11 +527,11 @@ function selectPlayer(id, scroll) {
       <div class="side">
         <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button></div>
         <div class="cardback">${cardBackHTML(p)}</div>
-        <div class="roles">${roles.filter(r => PCTS[r].some(([k]) => p.roles[r]["p_" + k] != null)).map(r => roleHTML(p, r)).join("")}</div>
+        <div class="roles">${decoyHTML(p)}</div>
       </div>
     </div>
     <div class="foot">
-      <p><b>Separation</b> and <b>distance to nearest receiver</b> are measured at the moment the ball is thrown. <b>Pressures</b>, <b>hits</b>, <b>hurries</b> and <b>beaten</b> are PFF's charting. A defender is <b>targeted</b> when he was the closest coverage defender to the intended receiver at the throw. The match minute counts game time, 15 minutes a quarter.</p>
+      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
@@ -540,7 +547,8 @@ function selectPlayer(id, scroll) {
 
 function renderMatches(p, plays) {
   const byGame = {};
-  p.games.forEach(g => { const k = g.gameId; (byGame[k] = byGame[k] || { ...g, lines: [] }).lines.push(gameLine(g)); });
+  p.games.filter(g => g.decoy).forEach(g => { byGame[g.gameId] = { ...g, lines: [
+    `${g.decoy.n} decoy routes · drew defenders on ${g.decoy.drew} · 2+ on ${g.decoy.multi} · best score ${Math.round(g.decoy.best)}`] }; });
   const games = Object.values(byGame).sort((a, b) => a.week - b.week);
   const best = plays.filter(q => q.best);
   const what = p.primary === "route" ? "decoy plays" : "plays";
@@ -576,6 +584,25 @@ function renderPlays(p, m) {
     loadPlay(p, m.plays[+b.dataset.i]);
   });
   loadPlay(p, m.plays[0]);
+}
+
+function decoyHTML(p) {
+  const d = dec(p);
+  const bars = [["decoy_score", "Decoy score"], ["decoy_drawn", "Defenders drawn per route"], ["decoy_multi", "Drew 2+ defenders"]]
+    .filter(([k]) => d["p_" + k] != null);
+  return `<section class="role">
+    <h3>As a decoy <small>${d.decoys} decoy routes</small></h3>
+    <div class="dnums">
+      <div><b>${f1(d.decoy_score)}</b><span>avg score</span></div>
+      <div><b>${f1(d.decoy_best)}</b><span>best score</span></div>
+      <div><b>${f2(d.decoy_drawn)}</b><span>defenders per route</span></div>
+      <div><b>${d.decoy_multi_n}</b><span>routes drawing 2+</span></div>
+    </div>
+    <div class="pcts">${bars.length ? bars.map(([k, lab]) => { const v = d["p_" + k]; return `<div class="pct"><span>${lab}</span>
+      <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${ordinal(v)}</span></div>`; }).join("")
+      + `<p class="pnote">Percentile among decoys with ${D.meta.decoy_qualify || 40}+ decoy routes.</p>`
+      : `<p class="pnote">Needs ${D.meta.decoy_qualify || 40}+ decoy routes for percentiles (has ${d.decoys}).</p>`}</div>
+  </section>`;
 }
 
 function roleHTML(p, role) {

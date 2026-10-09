@@ -276,10 +276,8 @@ def main():
     primary = (snaps_by_role.sort("len", descending=True).group_by("nflId").agg(pl.col("role").first()))
     primary = dict(primary.iter_rows())
     picks = []
-    for role in AGG:
-        sub_ = (df.filter((pl.col("role") == role)
-                          & pl.col("nflId").is_in([n for n, r in primary.items() if r == role])
-                          & ((pl.col("decoy_n").fill_null(0) >= 1) if role == "route" else pl.lit(True)))
+    for role in ["route"]:      # the app is about decoys: replays are decoy plays, for anyone who ran routes
+        sub_ = (df.filter((pl.col("role") == role) & (pl.col("decoy_n").fill_null(0) >= 1))
                   .with_columns(play_score(role).alias("score")))
         per_game = (sub_.sort("score", descending=True)
                         .group_by(["nflId", "gameId"], maintain_order=True).head(PER_GAME))

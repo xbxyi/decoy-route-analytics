@@ -31,7 +31,15 @@ def main():
                                    (pl.col("attached") >= 2).sum().alias("decoy_multi_n")))
     stats = {row["nflId"]: row for row in agg.iter_rows(named=True)}
     q = agg.filter(pl.col("decoys") >= QUALIFY)
-    pools = {c: q[c].to_numpy() for c in ("decoy_score", "decoy_multi")}
+    pools = {c: q[c].to_numpy() for c in ("decoy_score", "decoy_multi", "decoy_drawn")}
+    per_game = (r.group_by(["nflId", "gameId"]).agg(pl.len().alias("n"),
+                                                    (pl.col("attached") >= 1).sum().alias("drew"),
+                                                    (pl.col("attached") >= 2).sum().alias("multi"),
+                                                    pl.col("score_raw").max().alias("best"),
+                                                    pl.col("score_raw").mean().alias("avg")))
+    games = {(row["nflId"], row["gameId"]): row for row in per_game.iter_rows(named=True)}
+    best = r.group_by("nflId").agg(pl.col("score_raw").max().alias("best"))
+    best = dict(best.iter_rows())
 
     idx = json.load(open(INDEX, encoding="utf-8"))
     n = 0
@@ -40,7 +48,11 @@ def main():
         st = stats.get(p["id"])
         if not rt or not st:
             continue
-        rt.update(decoys=st["decoys"], decoy_score=round(st["decoy_score"], 1), decoy_drawn=round(st["decoy_drawn"], 2),
+        for g in p["games"]:
+            pg = games.get((p["id"], g.get("gameId")))
+            if g.get("role") == "route" and pg:
+                g["decoy"] = dict(n=pg["n"], drew=pg["drew"], multi=pg["multi"], best=round(pg["best"], 1), avg=round(pg["avg"], 1))
+        rt.update(decoy_best=round(best[p["id"]], 1), decoys=st["decoys"], decoy_score=round(st["decoy_score"], 1), decoy_drawn=round(st["decoy_drawn"], 2),
                   decoy_multi=round(st["decoy_multi"], 3), decoy_multi_n=st["decoy_multi_n"])
         for c, pool in pools.items():
             v = st[c]
