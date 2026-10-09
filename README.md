@@ -6,3 +6,4 @@ By evaluating defender spacing from the moment the ball is snapped until it is t
 
 Attach a visual here of the pitch that plays here from the website, as a gif, and under that add a picture of the coach stats at the bottom for the same play.
 
+https://temporary-spry-sable-dmgxyf7.vercel.app/#p41282
