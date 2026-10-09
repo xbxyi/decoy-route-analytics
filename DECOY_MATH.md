@@ -121,6 +121,20 @@ launch ratings if he was not on the week 8 roster), matched to our players by na
 name + team, then last name + birth date. 1,598 of 1,679 players match; the rest show their real
 counting stats instead.
 
+## 10. Coach view
+
+Four panels under the replay, all from the same decoy routes:
+
+| Panel | Computation |
+|---|---|
+| What his decoy work buys the target | Split his decoy routes into *lured 2+* and *lured 0–1*. For each group: mean target separation at the throw (distance from the targeted receiver to the nearest coverage defender), completion rate, mean yards on the play. Diff = 2+ minus 0–1. Groups under 20 plays are flagged *small sample*. |
+| Lured per route, by coverage | Mean `n` on his decoy routes against PFF-called man vs zone, with the league mean as a tick. |
+| Lured per route, by route depth | Mean `n` by how far past the line of scrimmage he was at the throw: under 5, 5–15, 15+ yards. League mean as a tick. |
+| Decoy score by week | Mean `score` per week, league mean as a dashed line. |
+
+League-wide, plays where a decoy lured 2+ defenders gave the target 4.31 yd of separation vs 4.17 yd
+otherwise. The effect is real but small, which is why the panel always shows the sample size.
+
 ## Choices and limits
 
 - **5 yards** is a modelling choice. A wider, motion-based version (up to 15 yd for defenders

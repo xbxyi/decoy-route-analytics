@@ -309,6 +309,33 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
 .apptitle { font: 800 clamp(30px, 4vw, 52px)/1 var(--f-display); text-transform: uppercase; letter-spacing: .01em; margin: 0; }
 .apptitle span { color: var(--pylon); }
 .wrap { gap: 18px; }
+
+/* coach view */
+.coach { display: grid; gap: 10px; border-top: 1px solid var(--rule); padding-top: 16px; }
+.cgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.cpanel { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.cpanel h4 { margin: 0; font: 700 15px/1.2 var(--f-display); text-transform: uppercase; letter-spacing: .03em; }
+.ctab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ctab th { font: 600 10px var(--f-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 4px 4px; border-bottom: 1px solid var(--rule); }
+.ctab td { padding: 6px 4px; border-bottom: 1px solid var(--rule); }
+.ctab td.n, .ctab th.n { text-align: right; font-family: var(--f-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctab td.d.up { color: var(--good); } .ctab td.d.down { color: var(--bad); }
+.cn { margin: 0; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cn b { color: var(--ink); font-weight: 600; }
+.cbar { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) 4.6em; gap: 8px; align-items: center; font-size: 13px; }
+.cbar .ct { position: relative; height: 12px; background: var(--track); border-radius: 2px; }
+.cbar .cf { position: absolute; inset: 0 auto 0 0; background: var(--decoy); border-radius: 0 4px 4px 0; }
+.cbar .lg, .lgk { width: 2px; background: var(--ink); }
+.cbar .lg { position: absolute; top: -3px; bottom: -3px; }
+.lgk { display: inline-block; height: 12px; }
+.lgk.dash { width: 14px; height: 0; border-top: 2px dashed var(--ink); background: none; }
+.cbar .cv { font: 500 13px var(--f-data); text-align: right; white-space: nowrap; }
+.cbar .cv small { color: var(--muted); font-size: 11px; }
+.wk { position: relative; height: 110px; display: flex; align-items: flex-end; gap: 6px; padding-bottom: 18px; }
+.wk .wc { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
+.wk .wc span { width: 70%; max-width: 26px; background: var(--decoy); border-radius: 4px 4px 0 0; }
+.wk .wc i { position: absolute; bottom: -17px; font: 500 11px var(--f-data); font-style: normal; color: var(--muted); }
+.wk .wl { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--ink); opacity: .6; z-index: 1; }
 </style>
 
 <div class="wrap">
@@ -529,6 +556,7 @@ function selectPlayer(id, scroll) {
           <div class="eyebrow" id="playshead">Plays</div>
           <div class="plays" id="plays"></div>
         </div>
+        ${coachHTML(p)}
       </div>
       <div class="side">
         <div><button class="cardbtn" id="cardbtn" type="button" aria-label="Open the card for ${esc(p.name)}">${cardHTML(p)}</button></div>
@@ -721,6 +749,67 @@ async function walkout(p) {
   el.onclick = close; document.addEventListener("keydown", onKey);
   document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add("go"));
+}
+
+
+/* ───────── coach view: what his decoy work buys, and where he lures best ───────── */
+function coachHTML(p) {
+  const c = (p.roles.route || {}).coach || {}, L = D.meta.league || {};
+  if (!c.impact && !c.coverage) return "";
+  const pct = v => v == null ? "–" : Math.round(v * 100) + "%";
+  const sgn = (v, f) => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + f(Math.abs(v));
+  const a = (c.impact || {}).lure2, b = (c.impact || {}).lure01;
+  const small = a && a.n < 20;
+  const row = (lab, k, f) => {
+    const va = a && a[k], vb = b && b[k];
+    const dlt = va != null && vb != null ? va - vb : null;
+    return `<tr><td>${lab}</td><td class="n">${va == null ? "–" : f(va)}</td><td class="n">${vb == null ? "–" : f(vb)}</td>
+      <td class="n d ${dlt > 0 ? "up" : dlt < 0 ? "down" : ""}">${sgn(dlt, f)}</td></tr>`;
+  };
+  const bars = (items, league) => {
+    const max = Math.max(1.5, ...items.map(i => i.v || 0), ...Object.values(league || {}));
+    return items.map(i => {
+      const lg = (league || {})[i.k];
+      return `<div class="cbar" title="${i.lab}: ${i.v == null ? "no routes" : f2(i.v) + " lured per route on " + i.n + " routes"}${lg != null ? " · league " + f2(lg) : ""}">
+        <span class="cl">${i.lab}</span>
+        <span class="ct"><span class="cf" style="width:${i.v == null ? 0 : Math.max(2, i.v / max * 100)}%"></span>${lg != null ? `<span class="lg" style="left:${lg / max * 100}%"></span>` : ""}</span>
+        <span class="cv">${i.v == null ? "–" : f2(i.v)}<small>${i.n ? " · " + i.n : ""}</small></span></div>`;
+    }).join("");
+  };
+  const cov = c.coverage || {}, dep = c.depth || {}, wk = c.weekly || [];
+  const wmax = Math.max(1, L.score || 0, ...wk.map(w => w.score || 0));
+  return `<section class="coach">
+    <div class="eyebrow">Coach view</div>
+    <div class="cgrid">
+      <div class="cpanel">
+        <h4>What his decoy work buys the target</h4>
+        <table class="ctab"><thead><tr><th></th><th class="n">Lured 2+</th><th class="n">Lured 0–1</th><th class="n">Diff</th></tr></thead><tbody>
+          ${row("Target separation at throw", "sep", v => f1(v) + " yd")}
+          ${row("Completion", "comp", pct)}
+          ${row("Yards per play", "ypp", v => f1(v))}
+        </tbody></table>
+        <p class="cn">${a ? a.n : 0} vs ${b ? b.n : 0} plays${small ? ' · <b>small sample</b>' : ""}</p>
+      </div>
+      <div class="cpanel">
+        <h4>Defenders lured per route, by coverage</h4>
+        ${bars([{ k: "man", lab: "Man", v: (cov.man || {}).lured, n: (cov.man || {}).n }, { k: "zone", lab: "Zone", v: (cov.zone || {}).lured, n: (cov.zone || {}).n }], L.coverage)}
+        <p class="cn"><span class="lgk"></span> league average</p>
+      </div>
+      <div class="cpanel">
+        <h4>Defenders lured per route, by route depth</h4>
+        ${bars([{ k: "short", lab: "Under 5 yd", v: (dep.short || {}).lured, n: (dep.short || {}).n },
+                { k: "mid", lab: "5–15 yd", v: (dep.mid || {}).lured, n: (dep.mid || {}).n },
+                { k: "deep", lab: "15+ yd", v: (dep.deep || {}).lured, n: (dep.deep || {}).n }], L.depth)}
+        <p class="cn"><span class="lgk"></span> league average · depth past the line at the throw</p>
+      </div>
+      <div class="cpanel">
+        <h4>Decoy score by week</h4>
+        <div class="wk">${L.score ? `<span class="wl" style="bottom:calc(18px + ${L.score / wmax} * (100% - 18px))" title="League average ${f1(L.score)}"></span>` : ""}
+          ${wk.map(w => `<div class="wc" title="Week ${w.week}: avg score ${f1(w.score)} on ${w.n} decoy routes"><span style="height:${Math.max(2, (w.score || 0) / wmax * 100)}%"></span><i>${w.week}</i></div>`).join("")}</div>
+        <p class="cn"><span class="lgk dash"></span> league average ${L.score ? f1(L.score) : ""}</p>
+      </div>
+    </div>
+  </section>`;
 }
 
 /* ───────── field replay ───────── */
