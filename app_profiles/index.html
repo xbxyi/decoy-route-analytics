@@ -301,14 +301,6 @@ td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; white-spa
 </style>
 
 <div class="wrap">
-  <header class="mast">
-    <div>
-      <div class="eyebrow">Player tracking · 2021 regular season, weeks 1–8</div>
-      <h1>Decoy <span>Film</span> Room</h1>
-      <p>Receivers, tight ends and backs who run routes while the ball goes somewhere else. At the throw, we count the defenders within 5 yards of each decoy and multiply by how far those defenders are from the real target. Pick a team, pick a decoy, and watch his best decoy plays.</p>
-    </div>
-    <div class="source" id="source">Loading players…</div>
-  </header>
 
   <nav class="teams" id="teams" aria-label="Teams"></nav>
 
@@ -383,7 +375,7 @@ function init(data) {
   D.players = D.players.filter(p => (dec(p).decoys || 0) >= MIN_DECOYS && (dec(p).decoy_real_n || 0) >= 1);
   D.players.forEach(p => { p.primary = "route"; byId.set(p.id, p); });
   const m = D.meta, routes = D.players.reduce((a, p) => a + dec(p).decoys, 0);
-  $("#source").innerHTML = `<b>${D.players.length} decoys</b> with ${MIN_DECOYS}+ decoy routes, <b>${routes.toLocaleString()}</b> decoy routes in ${m.games} games.<br>Percentiles compare decoys with ${m.decoy_qualify || 40}+ decoy routes.`;
+  if ($("#source")) $("#source").innerHTML = `<b>${D.players.length} decoys</b> with ${MIN_DECOYS}+ decoy routes, <b>${routes.toLocaleString()}</b> decoy routes in ${m.games} games.<br>Percentiles compare decoys with ${m.decoy_qualify || 40}+ decoy routes.`;
   const teams = [...new Set(D.players.map(p => p.team))].filter(t => t !== "UNK").sort();
   $("#teams").innerHTML = teams.map(t => `<button class="team" data-t="${t}" aria-pressed="false">${t}</button>`).join("");
   $("#teams").querySelectorAll(".team").forEach(b => b.onclick = () => pickTeam(b.dataset.t, true));
@@ -514,7 +506,7 @@ function selectPlayer(id, scroll) {
                 `<button type="button" class="spd" data-r="${r}" aria-pressed="${r === playRate}">${l}</button>`).join("")}</span></div>
             <div class="legend"><span><i style="background:var(--pylon-fill)"></i>${esc(short(p.name))}</span>
               <span><i style="background:var(--tv-yellow)"></i>Target</span>
-              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Defenders he pulled (5-yd zone at the throw)</span>
+              <span><i style="background:transparent;outline:2.5px solid var(--decoy)"></i>Defenders he baited</span>
               <span><i style="background:var(--off)"></i>Offense</span>
               <span><i style="background:var(--def);outline:1px solid var(--chalk)"></i>Defense</span></div>
             <div class="decoys" id="decoys"></div>
@@ -531,7 +523,7 @@ function selectPlayer(id, scroll) {
       </div>
     </div>
     <div class="foot">
-      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Real decoy play:</b> 2 or more coverage defenders within 5 yards of him at the throw, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, the coverage defenders within 5 yards of him (not also within 5 yards of the target) multiplied by their distance from the target, in yards, then divided by (1 + teammates inside his 5-yard zone), since defenders there may be covering the teammate. Tracking in this dataset runs from about 0.5 s before the snap to 0.5 s after the throw; the replay pauses on the throw so you can read it. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
+      <p><b>Decoy:</b> a player who ran a route on a pass that went to someone else. <b>Baited defender:</b> judged over the last 1.5 s before the throw. He must have stayed closer to this decoy than to any other route runner, be within 12 yards of him at the throw, and either be within 5 yards or be chasing him (moving toward him or mirroring his movement, with a stricter bar the farther away he is). Defenders within 5 yards of the target do not count. <b>Real decoy play:</b> 2 or more baited defenders, and those defenders ended up farther from the target than they were at the snap. <b>Decoy score:</b> at the moment of the throw, his baited defenders multiplied by their distance from the target, in yards, then divided by (1 + teammates inside his 5-yard zone), since defenders there may be covering the teammate. Tracking in this dataset runs from about 0.5 s before the snap to 0.5 s after the throw; the replay pauses on the throw so you can read it. <b>Match minute</b> counts game time, 15 minutes a quarter.</p>
     </div>`;
   $("#cardbtn").onclick = () => walkout(p);
   document.querySelectorAll(".spd").forEach(b => b.onclick = () => {
@@ -744,7 +736,10 @@ async function loadPlay(p, q) {
   let xmin = 1e9, xmax = -1e9;
   frames.forEach(f => f.pos.forEach(([x], id) => { if (id) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); } }));
   const los = (frames[0].pos.get(0) || [xmin + 8])[0];
-  const decoys = findDecoys(F, frames, keyT, q.target);
+  const m = q.me || {};
+  const decoys = m.decoy_ids ? [{ id: p.id, att: m.decoy_ids, n: m.decoy_n, raw: m.decoy_raw, tm: m.decoy_tm || 0,
+      score: m.decoy_score, pull: m.decoy_n ? m.decoy_raw / m.decoy_n : 0, radius: Math.max(DECOY_YDS, (m.decoy_radius || 0) + 0.6) }]
+    : findDecoys(F, frames, keyT, q.target);
   const t0 = frames[0].t;
   anim = { raf: 0, t: reduce ? keyT : t0, playing: !reduce, last: 0, held: false, hold: 0,
            play: { p, q, F, frames, end, keyT, t0, decoys, x0: Math.floor(xmin - 3), x1: Math.ceil(xmax + 3), los, fd: los + (q.togo || 0) } };
@@ -782,7 +777,7 @@ function renderDecoys(decoys, target) {
   if (!target) { el.innerHTML = `<span class="dh">Decoys</span> No pass thrown on this play, so no decoys.`; return; }
   const live = decoys.filter(x => x.n);
   el.innerHTML = `<span class="dh">His decoy work at the throw</span> ` + (live.length
-    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = ${f1(x.raw)}${x.tm
+    ? live.map(x => `<span class="dc"><b>${esc(short(D.names[x.id] || ""))}</b> baited ${(x.att || []).map(c => esc(short(D.names[c] || ""))).join(", ")}: ${x.n} defender${x.n > 1 ? "s" : ""} × ${f1(x.pull)} yd from target = ${f1(x.raw)}${x.tm
         ? `, ÷ ${1 + x.tm} for ${x.tm} teammate${x.tm > 1 ? "s" : ""} in his zone` : ", no teammates in his zone"} → score <b class="ds">${f1(x.score)}</b>${x.n >= 2 ? ' <i class="d2">2+</i>' : ""}</span>`).join("")
     : `He had no defender within ${DECOY_YDS} yards at the throw on this play.`);
 }
@@ -867,7 +862,7 @@ function draw() {
   const decoyCol = tok("--decoy"), live = (P.decoys || []).filter(x => x.n && x.id === me), held = new Set();
   if (atKey) live.forEach(x => {
     const dp = pos.get(x.id); if (!dp) return;
-    g.beginPath(); g.arc(X(dp[1]), Y(dp[0]), DECOY_YDS * s, 0, Math.PI * 2);
+    g.beginPath(); g.arc(X(dp[1]), Y(dp[0]), (x.radius || DECOY_YDS) * s, 0, Math.PI * 2);
     g.fillStyle = "rgba(56,198,244,.14)"; g.fill();
     g.setLineDash([4 * dpr, 4 * dpr]); g.strokeStyle = decoyCol; g.lineWidth = 1.5 * dpr; g.stroke(); g.setLineDash([]);
     g.lineWidth = 2 * dpr;

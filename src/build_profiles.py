@@ -180,7 +180,7 @@ PCT = {"route": [("sep", True), ("tgt_share", True), ("yds", True), ("top", True
 
 
 EXTRA = ["sep", "target", "catch", "sack", "hit", "hurry", "allowed", "tt", "int", "targeted", "comp", "near",
-         "decoy_n", "decoy_score", "decoy_drag", "decoy_raw", "decoy_tm"]
+         "decoy_n", "decoy_score", "decoy_drag", "decoy_raw", "decoy_tm", "decoy_ids", "decoy_radius"]
 DECOY_REPS = os.path.join(HERE, "..", "out", "decoy_reps.parquet")   # from decoy.py
 
 
@@ -219,9 +219,11 @@ def main():
             print(f"  game {k + 1}/{len(gids)}  rows={len(rows):,}", flush=True)
     df = pl.DataFrame(rows, infer_schema_length=None)
     dr = (pl.read_parquet(DECOY_REPS)
-            .select(["gameId", "playId", "nflId", "attached", "score_adj", "score_raw", "score", "teammates"])
+            .select(["gameId", "playId", "nflId", "attached", "score_adj", "score_raw", "score", "teammates",
+                     "attachedIds", "bait_radius"])
             .rename({"attached": "decoy_n", "score_adj": "decoy_score", "score_raw": "decoy_raw",
-                     "score": "decoy_drag", "teammates": "decoy_tm"}))
+                     "score": "decoy_drag", "teammates": "decoy_tm", "attachedIds": "decoy_ids",
+                     "bait_radius": "decoy_radius"}))
     df = df.join(dr, on=["gameId", "playId", "nflId"], how="left")
     print(f"player-plays: {df.height:,}")
 

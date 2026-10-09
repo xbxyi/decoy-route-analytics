@@ -30,7 +30,11 @@ from bdb import BDB
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "out")
 
-ATTACH_YDS = 5.0          # modelling choice — sensitivity shown in validate()
+ATTACH_YDS = 5.0          # close-cover radius; also the teammate zone and the "on the target" radius
+BAIT_MAX_YDS = 12.0       # a baited defender can be up to this far from the decoy at the throw
+BAIT_WINDOW = 15          # frames before the throw used to judge baiting (1.5 s at 10 Hz)
+PURSUIT_BASE = 0.25       # pursuit (cosine) needed just outside the close-cover radius ...
+PURSUIT_PER_YD = 0.03     # ... rising this much per extra yard: farther defenders need clearer chasing
 THROW_EVENTS = ("pass_forward", "autoevent_passforward")
 
 # "pass short left to M.Evans", "pass incomplete deep right to A.St. Brown",
@@ -100,7 +104,67 @@ def throw_frames(d: BDB, gid: int) -> tuple[pl.DataFrame, pl.DataFrame]:
     return at, tr
 
 
-def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict) -> list[dict]:
+def _paths(win: pl.DataFrame) -> dict:
+    """(gameId, playId) -> {nflId: (n_frames, 2) positions over the bait window, NaN where missing}."""
+    out = {}
+    for (g, p), w in win.group_by(["gameId", "playId"]):
+        frames = sorted(w["frameId"].unique().to_list())
+        fi = {f: i for i, f in enumerate(frames)}
+        paths = {}
+        for n, f, x, y in w.select(["nflId", "frameId", "x", "y"]).iter_rows():
+            if n is None:
+                continue
+            a = paths.setdefault(n, np.full((len(frames), 2), np.nan))
+            a[fi[f]] = (x, y)
+        out[(g, p)] = paths
+    return out
+
+
+def baited(paths: dict, decoy: int, routes: list, cov: list, at_throw: dict, on_target: dict) -> list[int]:
+    """Coverage defenders baited by this decoy over the last 1.5 s before the throw.
+
+    A defender is baited when all hold:
+      1. responsibility — of all route runners, the decoy is the one he stayed closest to on
+         average over the window (so he is not credited to the wrong receiver);
+      2. within BAIT_MAX_YDS of the decoy at the throw;
+      3. tight (inside ATTACH_YDS at the throw) OR pursuing: averaged over frames where he is
+         moving, his velocity points at the decoy or mirrors the decoy's velocity, with the bar
+         rising with distance: cosine >= 0.25 + 0.03 per yard beyond 5 (0.32 at 7 yd, 0.46 at 12);
+      4. not within ATTACH_YDS of the target at the throw (then he is covering the target).
+    """
+    D = paths.get(decoy)
+    if D is None:
+        return []
+    vD = np.diff(D, axis=0) / 0.1
+    out = []
+    for c in cov:
+        C = paths.get(c)
+        if C is None or on_target.get(c):
+            continue
+        mean_d = {r: np.nanmean(np.hypot(*(C - paths[r]).T)) for r in routes if r in paths}
+        if not mean_d or min(mean_d, key=mean_d.get) != decoy:
+            continue
+        cx, cy = at_throw[c]
+        dx, dy = at_throw[decoy]
+        d_now = float(np.hypot(cx - dx, cy - dy))
+        if d_now >= BAIT_MAX_YDS:
+            continue
+        if d_now < ATTACH_YDS:
+            out.append(c)
+            continue
+        vC = np.diff(C, axis=0) / 0.1
+        to_D = (D - C)[1:]
+        sp_c, sp_d = np.hypot(*vC.T), np.hypot(*vD.T)
+        cos_at = (vC * to_D).sum(1) / (sp_c * np.hypot(*to_D.T) + 1e-9)
+        cos_mirror = np.where(sp_d > 1, (vC * vD).sum(1) / (sp_c * sp_d + 1e-9), -1)
+        moving = sp_c > 1
+        need = PURSUIT_BASE + PURSUIT_PER_YD * (d_now - ATTACH_YDS)
+        if moving.sum() >= 3 and np.nanmean(np.maximum(cos_at, cos_mirror)[moving]) >= need:
+            out.append(c)
+    return out
+
+
+def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict, paths: dict | None = None) -> list[dict]:
     """One row per decoy route per play, plus a play summary row (nflId = None).
 
     Two scores per decoy:
@@ -144,11 +208,22 @@ def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict
         drag = np.nan_to_num(np.clip(d_to_t - d0_to_t, 0, None))
         on_target = d_to_t < ATTACH_YDS
         decoys = route.filter(pl.col("nflId") != tid)
+        P = (paths or {}).get((g, p), {})
+        xy = {n: (x, y) for n, x, y in grp.select(["nflId", "x", "y"]).iter_rows() if n is not None}
+        ontgt = {int(c): bool(o) for c, o in zip(cid, on_target)}
+        rids = route["nflId"].to_list()
+        cidx = {int(c): i for i, c in enumerate(cid)}
         tot_raw = tot = 0.0
         n_multi = 0
         for nid, x, y in decoys.select(["nflId", "x", "y"]).iter_rows():
             dd = np.hypot(C[:, 0] - x, C[:, 1] - y)
-            att = (dd < ATTACH_YDS) & ~on_target
+            near5 = (dd < ATTACH_YDS) & ~on_target
+            if P:
+                bait = baited(P, nid, rids, [int(c) for c in cid], xy, ontgt)
+                att = np.zeros(len(cid), bool)
+                att[[cidx[b] for b in bait]] = True
+            else:
+                att = near5
             n = int(att.sum())
             raw = float(d_to_t[att].sum())
             tm = int(((np.hypot(M[:, 0] - x, M[:, 1] - y) < ATTACH_YDS) & (mid != nid)).sum())
@@ -162,7 +237,8 @@ def play_reps(at: pl.DataFrame, snap: pl.DataFrame, pff: pl.DataFrame, tgt: dict
                             dist_to_target=round(float(np.hypot(x - T[0], y - T[1])), 2),
                             depth=round(x - los.get((g, p), np.nan), 2),
                             width=round(abs(y - 26.65), 2), ncov=len(cid),
-                            n_route=route.height,
+                            n_route=route.height, attached5=int(near5.sum()),
+                            bait_radius=round(float(dd[att].max()), 2) if n else 0.0,
                             attachedIds=[int(i) for i in cid[att]]))
         out.append(dict(gameId=g, playId=p, nflId=None, targetId=tid,
                         score_raw=round(tot_raw, 2), score=round(tot, 2),
@@ -180,7 +256,9 @@ def run(d: BDB | None = None):
     for k, gid in enumerate(d.game_ids()):
         at, tr = throw_frames(d, gid)
         snap = tr.filter(pl.col("frameId") == pl.col("snapFrame"))
-        rows += play_reps(at, snap, pff, tgt)
+        win = tr.filter((pl.col("frameId") <= pl.col("throwFrame"))
+                        & (pl.col("frameId") >= pl.col("throwFrame") - BAIT_WINDOW))
+        rows += play_reps(at, snap, pff, tgt, _paths(win))
         if k % 20 == 0:
             print(f"  game {k + 1}/{len(d.game_ids())}  rows={len(rows):,}", flush=True)
     df = pl.DataFrame(rows, infer_schema_length=None)
