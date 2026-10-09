@@ -4,14 +4,5 @@ Elite wide receivers change games even when they never touch the ball, yet tradi
 
 By evaluating defender spacing from the moment the ball is snapped until it is thrown, our model calculates the exact amount of open grass created for teammates. This proves that pulling defenders away on deep routes directly drives higher offensive success rates for the entire team. Our project pairs a Python data pipeline with an interactive 2D web application (`app/index.html` and `app_profiles/index.html`) so coaches and fans can replay animated plays and explore league-wide player leaderboards.
 
-## Deploy (Vercel)
+Attach a visual here of the pitch that plays here from the website, as a gif, and under that add a picture of the coach stats at the bottom for the same play.
 
-```
-cd src && python build_site.py          # -> site/ (page + data, ~25 MB, not committed)
-npx vercel deploy ../site --prod        # after `npx vercel login`; or --temporary without an account
-```
-
-How the numbers are computed: [DECOY_MATH.md](DECOY_MATH.md).
-
-
-https://snappy-khaki-07k1yox.vercel.app/#p37139
