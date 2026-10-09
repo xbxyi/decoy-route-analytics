@@ -595,7 +595,7 @@ function decoyHTML(p) {
     </div>
     <div class="pcts">${bars.length ? bars.map(([k, lab]) => { const v = d["p_" + k]; return `<div class="pct"><span>${lab}</span>
       <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${ordinal(v)}</span></div>`; }).join("")
-      + `<p class="pnote">Percentile among decoys with ${D.meta.decoy_qualify || 40}+ decoy routes.</p>`
+      + ""
       : ""}</div>
   </section>`;
 }
@@ -608,8 +608,7 @@ function roleHTML(p, role) {
     <div class="pcts">
       ${pcts.length ? pcts.map(([k, lab]) => { const v = x["p_" + k]; return `<div class="pct"><span>${lab}</span>
         <span class="track"><span class="fill" style="width:${Math.max(v, 2)}%;background:${pctColor(v)}"></span></span><span class="v">${ordinal(v)}</span></div>`; }).join("")
-        + `<p class="pnote">Percentile among ${ROLE_WHO[role]} with ${D.meta.qualify}+ ${ROLE_BASE[role]}. Higher is better on every bar.</p>`
-        : `<p class="pnote">Needs ${D.meta.qualify}+ ${ROLE_BASE[role]} to be compared with other ${ROLE_WHO[role]} (has ${n}).</p>`}
+        : ""}
     </div>
   </section>`;
 }
